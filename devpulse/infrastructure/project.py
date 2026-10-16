@@ -85,3 +85,48 @@ def add_memory(root: Path, text: str, vault: Vault | None = None):
         if len(content.encode()) > 128000:
             raise ValueError('Memory exceeds 128 KB; curate MEMORY.md before continuing.')
         atomic_write(safe_path(root, base / 'MEMORY.md'), content)
+
+
+def set_model(
+    root: Path,
+    model_name: str,
+    provider_kind: str = 'ollama',
+    base_url: str | None = None,
+) -> Path:
+    base = safe_path(root, root / '.devpulse')
+    base.mkdir(parents=True, exist_ok=True)
+    config_path = base / 'config.json'
+    default_url = (
+        'http://127.0.0.1:11434' if provider_kind == 'ollama' else 'https://api.openai.com/v1'
+    )
+
+    data = {'providers': [], 'context_bytes': 24000, 'cache_ttl': 86400}
+    if config_path.is_file():
+        try:
+            data = json.loads(config_path.read_text('utf-8'))
+        except Exception:
+            pass
+
+    providers = data.get('providers', [])
+    updated = False
+    for p in providers:
+        if p.get('kind') == provider_kind or not updated:
+            p['model'] = model_name
+            if base_url:
+                p['base_url'] = base_url
+            updated = True
+            break
+    if not updated:
+        providers.insert(
+            0,
+            {
+                'name': provider_kind,
+                'kind': provider_kind,
+                'model': model_name,
+                'base_url': base_url or default_url,
+                'api_key_env': 'OPENAI_API_KEY' if provider_kind != 'ollama' else '',
+            },
+        )
+    data['providers'] = providers
+    atomic_write(config_path, json.dumps(data, indent=2) + '\n')
+    return config_path

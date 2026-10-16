@@ -26,6 +26,17 @@ def handle(args, root: Path) -> int:
         config_reader=lambda: load_config(root),
     )
 
+    # If run interactively in a terminal, print friendly instructions to stderr
+    if sys.stdin.isatty():
+        sys.stderr.write(
+            'DevPulse Model Context Protocol (MCP) Server\n'
+            'Listening on stdio for JSON-RPC messages from coding agents (Claude Code, Google Antigravity, Codex).\n'
+            'To connect your coding agents automatically, run:\n'
+            '  devpulse integrate --all\n'
+            'Press Ctrl+C to exit.\n'
+        )
+        sys.stderr.flush()
+
     # Stdio loop for MCP JSON-RPC
     for line in sys.stdin:
         line = line.strip()

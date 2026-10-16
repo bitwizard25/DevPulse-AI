@@ -13,7 +13,7 @@ def parser() -> argparse.ArgumentParser:
     app.add_argument(
         '--project', default='.', help='Project directory (default: current directory).'
     )
-    commands = app.add_subparsers(dest='command', required=True)
+    commands = app.add_subparsers(dest='command', required=False)
     init = commands.add_parser(
         'init', help='Create config, rules, memory and a review skill; preserve existing files.'
     )
@@ -90,7 +90,13 @@ def parser() -> argparse.ArgumentParser:
         'doctor', help='Inspect installation and provider configuration without inference.'
     )
     models = commands.add_parser(
-        'models', help='Profile system hardware and rate Ollama models by fit, TPS and Coding IQ.'
+        'models',
+        aliases=['model'],
+        help='Profile system hardware, rate Ollama models by fit, and select the active model.',
+    )
+    models.add_argument('model', nargs='?', help='Specific model name or pattern to inspect.')
+    models.add_argument(
+        '--select', action='store_true', help='Set this model as active in .devpulse/config.json.'
     )
     models.add_argument('--base-url', help='Ollama API base URL.')
     models.add_argument('--json', action='store_true')
@@ -141,7 +147,8 @@ def parser() -> argparse.ArgumentParser:
     )
     rules.add_argument('action', choices=['sync'], default='sync', nargs='?')
     rules.add_argument('--json', action='store_true')
+    commands.add_parser('setup', help='Run interactive guided setup wizard.')
     commands.add_parser('tui', help='Open a small interactive terminal dashboard.')
-    for sub in commands.choices.values():
+    for sub in set(commands.choices.values()):
         sub.add_argument('--project', default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     return app

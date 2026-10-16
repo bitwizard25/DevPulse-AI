@@ -12,7 +12,19 @@ def terminal_safe(value) -> str:
 
 
 def emit(value, as_json: bool = False):
-    print(json.dumps(value, indent=2, ensure_ascii=True) if as_json else terminal_safe(value))
+    safe_text = json.dumps(value, indent=2, ensure_ascii=True) if as_json else terminal_safe(value)
+    try:
+        print(safe_text)
+    except UnicodeEncodeError:
+        import sys
+
+        try:
+            sys.stdout.buffer.write(
+                (safe_text + '\n').encode(sys.stdout.encoding or 'utf-8', errors='replace')
+            )
+            sys.stdout.buffer.flush()
+        except Exception:
+            print(safe_text.encode('ascii', errors='replace').decode('ascii'))
 
 
 def render_review(result: dict, as_json: bool = False):

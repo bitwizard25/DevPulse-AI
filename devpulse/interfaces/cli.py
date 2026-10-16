@@ -23,19 +23,67 @@ HANDLERS = {
     'doctor': state.doctor,
     'jobs': jobs.handle,
     'models': models.handle,
+    'model': models.handle,
     'verify': verify.handle,
     'mcp': mcp.handle,
     'integrate': integrate.handle,
     'rules': lambda args, root: integrate.handle(setattr(args, 'sync_only', True) or args, root),
+    'setup': lambda args, root: __import__(
+        'devpulse.interfaces.setup', fromlist=['run_setup_wizard']
+    ).run_setup_wizard(root),
 }
 
 
+def print_welcome(root: Path):
+    from .. import __version__
+    from ..infrastructure.config import load_config
+    from ..infrastructure.hardware import probe_hardware
+    from .output import emit
+
+    hw = probe_hardware()
+    config = load_config(root)
+    active_model = 'None (offline mode)'
+    if config.providers:
+        p0 = config.providers[0]
+        active_model = f'{p0.model} ({p0.name})'
+
+    emit('==============================================================================')
+    emit(f'  DevPulse AI v{__version__} | Local Code Review, Gate & Agent Co-Processor')
+    emit('==============================================================================')
+    emit(f'  Project:       {root}')
+    emit(f'  Active Model:  {active_model}')
+    emit(
+        f'  Hardware:      {hw.gpu_name} ({hw.vram_gb:.1f} GB VRAM) | {hw.total_ram_gb:.1f} GB RAM ({hw.os_name})'
+    )
+    emit('------------------------------------------------------------------------------')
+    emit('  Quick Commands:')
+    emit('    devpulse                     Interactive setup and launcher menu')
+    emit('    devpulse review              Run code review & security audit on staged changes')
+    emit('    devpulse review --file <f>   Review a specific file in the repository')
+    emit('    devpulse verify --file <f>   AST syntax & secret blocker gate (exit code 2)')
+    emit('    devpulse models              Profile host hardware & rate Ollama models')
+    emit('    devpulse models <name> --select  Select and activate a local Ollama model')
+    emit('    devpulse integrate --all     Bridge Claude Code, Google Antigravity & Codex')
+    emit('    devpulse mcp                 Launch Model Context Protocol stdio server')
+    emit('    devpulse tui                 Open interactive terminal dashboard')
+    emit('    devpulse --help              Show detailed command arguments')
+    emit('==============================================================================')
+
+
 def main(argv=None) -> int:
-    args = parser().parse_args(argv)
+    app_parser = parser()
+    args = app_parser.parse_args(argv)
     try:
         root = Path(args.project).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError('Project must be a directory.')
+        if not args.command:
+            if sys.stdin.isatty():
+                from .setup import run_interactive_menu
+
+                return run_interactive_menu(root)
+            print_welcome(root)
+            return 0
         if args.command == 'tui':
             from .tui import dashboard
 
