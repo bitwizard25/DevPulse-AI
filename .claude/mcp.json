@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "devpulse": {
+      "command": "devpulse",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

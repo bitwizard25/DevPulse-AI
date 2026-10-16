@@ -1,0 +1,3 @@
+[mcp.devpulse]
+command = "devpulse"
+args = ["mcp"]
