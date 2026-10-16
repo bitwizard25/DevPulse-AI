@@ -29,7 +29,14 @@ Explain the trigger and impact of each issue. Avoid speculative findings.
 """
 
 
-def initialize(root: Path, *, provider: str, model: str, base_url: str | None, api_key_env: str):
+def initialize(
+    root: Path,
+    *,
+    provider: str = 'offline',
+    model: str = 'offline',
+    base_url: str | None = None,
+    api_key_env: str = 'OPENAI_API_KEY',
+):
     base = safe_path(root, root / '.devpulse')
     base.mkdir(parents=True, exist_ok=True)
     with ProcessLock(base / 'project.lock'):

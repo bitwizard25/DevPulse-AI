@@ -33,6 +33,12 @@ def parser() -> argparse.ArgumentParser:
     source.add_argument('--worktree', action='store_true', help='Review tracked unstaged changes.')
     source.add_argument('--staged', action='store_true', help='Review staged changes (default).')
     review.add_argument(
+        'file_pos',
+        nargs='?',
+        metavar='FILE',
+        help='Target file to review directly (e.g. devpulse review cli.py).',
+    )
+    review.add_argument(
         '--offline', action='store_true', help='Run deterministic checks without an LLM or network.'
     )
     review.add_argument(
@@ -105,6 +111,12 @@ def parser() -> argparse.ArgumentParser:
         help='Deterministic AST syntax and secret verification gate (exit code 2 on failure).',
     )
     verify.add_argument('--file', help='Target file to verify.')
+    verify.add_argument(
+        'file_pos',
+        nargs='?',
+        metavar='FILE',
+        help='Target file to verify (e.g. devpulse verify bootstrap.py).',
+    )
     verify.add_argument('--code', help='Code snippet string to verify.')
     verify.add_argument('--json', action='store_true')
     commands.add_parser(

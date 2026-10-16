@@ -17,7 +17,7 @@ def handle(args, root: Path) -> int:
         )
     options = {
         'mode': 'offline' if args.offline else 'ai',
-        'file': args.file,
+        'file': args.file or getattr(args, 'file_pos', None),
         'worktree': args.worktree,
         'no_cache': args.no_cache,
         'chaos': args.chaos,

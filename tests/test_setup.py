@@ -5,7 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from devpulse.domain.hardware import HardwareProfile
-from devpulse.interfaces.setup import run_setup_wizard
+from devpulse.infrastructure.project import initialize
+from devpulse.interfaces.setup import run_interactive_menu, run_setup_wizard
 
 
 class SetupTests(unittest.TestCase):
@@ -53,6 +54,25 @@ class SetupTests(unittest.TestCase):
         cfg_data = json.loads((self.root / '.devpulse/config.json').read_text('utf-8'))
         self.assertEqual(len(cfg_data['providers']), 1)
         self.assertEqual(cfg_data['providers'][0]['kind'], 'ollama')
+
+    @patch('devpulse.interfaces.setup.probe_hardware')
+    @patch('builtins.input')
+    def test_interactive_menu_offline_option(self, mock_input, mock_probe):
+        mock_probe.return_value = HardwareProfile(
+            total_ram_bytes=8 * 1024**3,
+            available_ram_bytes=4 * 1024**3,
+            vram_bytes=4 * 1024**3,
+            gpu_name='NVIDIA GeForce RTX 2050',
+            os_name='Windows',
+        )
+        initialize(self.root, provider='offline', model='offline')
+        # Choice 2 (offline checks), target file = 'test.py', press enter to return, choice q
+        test_file = self.root / 'test.py'
+        test_file.write_text('print("hello world")\n', encoding='utf-8')
+        mock_input.side_effect = ['2', 'test.py', '', 'q']
+
+        ret = run_interactive_menu(self.root)
+        self.assertEqual(ret, 0)
 
 
 if __name__ == '__main__':

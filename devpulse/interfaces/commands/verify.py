@@ -5,17 +5,18 @@ from pathlib import Path
 
 from ...domain.checks import check_python
 from ...domain.privacy import Vault
-from ...infrastructure.context import safe_path
 from ..output import emit
 
 
 def handle(args, root: Path) -> int:
     source_text = ''
-    target_path = getattr(args, 'file', None)
+    target_path = getattr(args, 'file', None) or getattr(args, 'file_pos', None)
     is_python = True
 
     if target_path:
-        file_path = safe_path(root, root / target_path)
+        from ...infrastructure.source import resolve_file
+
+        file_path = resolve_file(root, target_path)
         if not file_path.is_file():
             raise ValueError(f'File not found: {target_path}')
         source_text = file_path.read_text(encoding='utf-8', errors='replace')

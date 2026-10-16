@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,8 @@ from devpulse.interfaces.commands import models
 
 class ModelsCliTests(unittest.TestCase):
     def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory(prefix='devpulse-models-test-')
+        self.root = Path(self.temp_dir.name)
         self.profile = HardwareProfile(
             total_ram_bytes=8 * 1024**3,
             available_ram_bytes=4 * 1024**3,
@@ -15,6 +18,9 @@ class ModelsCliTests(unittest.TestCase):
             gpu_name='NVIDIA GeForce RTX 2050',
             os_name='Windows',
         )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
 
     @patch('devpulse.interfaces.commands.models.probe_hardware')
     @patch('devpulse.interfaces.commands.models.fetch_models')
@@ -36,7 +42,7 @@ class ModelsCliTests(unittest.TestCase):
             'devpulse.interfaces.commands.models.emit',
             side_effect=lambda val, **kw: captured.append(val),
         ):
-            ret = models.handle(args, Path('.'))
+            ret = models.handle(args, self.root)
             self.assertEqual(ret, 0)
             self.assertEqual(len(captured), 1)
             data = captured[0]
@@ -60,7 +66,7 @@ class ModelsCliTests(unittest.TestCase):
             'devpulse.interfaces.commands.models.emit',
             side_effect=lambda val, **kw: captured.append(val),
         ):
-            ret = models.handle(args, Path('.'))
+            ret = models.handle(args, self.root)
             self.assertEqual(ret, 0)
             data = captured[0]
             self.assertEqual(len(data['ratings']), 1)

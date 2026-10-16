@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from ..domain.hardware import FitTier, rate_models
-from ..infrastructure.config import load_config
+from ..infrastructure.config import load_config, state_home
 from ..infrastructure.hardware import fetch_models, probe_hardware
 from ..infrastructure.integrate import integrate_all
 from ..infrastructure.project import initialize, set_model
@@ -127,18 +127,21 @@ def run_interactive_menu(root: Path) -> int:
     from .commands import models, verify
     from .output import render_review
 
-    config = load_config(root)
-    # If not yet configured with providers or missing RULES.md, offer setup wizard directly
-    if not (root / '.devpulse/RULES.md').exists() or not (root / '.devpulse/config.json').exists():
-        return run_setup_wizard(root)
-
-    profile = probe_hardware()
-    active_model = 'None (offline mode)'
-    if config.providers:
-        p0 = config.providers[0]
-        active_model = f'{p0.model} ({p0.kind})'
-
     while True:
+        config = load_config(root)
+        # If not yet configured with providers or missing RULES.md, offer setup wizard directly
+        if (
+            not (root / '.devpulse/RULES.md').exists()
+            or not (root / '.devpulse/config.json').exists()
+        ):
+            return run_setup_wizard(root)
+
+        profile = probe_hardware()
+        active_model = 'None (offline mode)'
+        if config.providers:
+            p0 = config.providers[0]
+            active_model = f'{p0.model} ({p0.kind})'
+
         emit('==============================================================================')
         emit(f'  DevPulse AI v{__version__} | Local Code Review, Gate & Agent Co-Processor')
         emit('==============================================================================')
@@ -149,7 +152,7 @@ def run_interactive_menu(root: Path) -> int:
         )
         emit('------------------------------------------------------------------------------')
         emit('  What would you like to do?')
-        emit('    [1] Run code review on staged changes')
+        emit('    [1] Run code review (file or staged changes)')
         emit('    [2] Run offline deterministic checks (syntax & secrets)')
         emit('    [3] Select / inspect AI models')
         emit('    [4] Verify a file (Compiler-as-a-Judge gate)')
@@ -168,19 +171,31 @@ def run_interactive_menu(root: Path) -> int:
             emit('Goodbye.')
             return 0
         elif choice == '1':
-            engine = make_engine(State())
-            emit('\nRunning code review on staged git diff...')
             try:
-                res = engine.review(root, load_config(root), mode='ai')
+                target = input(
+                    '\nEnter file to review (or press Enter for staged git changes): '
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                target = ''
+            emit('\nRunning code review...')
+            try:
+                engine = make_engine(State(state_home()))
+                res = engine.review(root, load_config(root), mode='ai', file=target or None)
                 render_review(res)
             except Exception as exc:
                 emit(f'Review error: {str(exc)}')
             input('\nPress Enter to return to menu...')
         elif choice == '2':
-            engine = make_engine(State())
-            emit('\nRunning offline deterministic checks...')
             try:
-                res = engine.review(root, load_config(root), mode='offline')
+                target = input(
+                    '\nEnter file for offline checks (or press Enter for staged git changes): '
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                target = ''
+            emit('\nRunning offline deterministic checks (syntax & secrets)...')
+            try:
+                engine = make_engine(State(state_home()))
+                res = engine.review(root, load_config(root), mode='offline', file=target or None)
                 render_review(res)
             except Exception as exc:
                 emit(f'Offline review error: {str(exc)}')

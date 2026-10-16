@@ -40,10 +40,32 @@ def read_file(path: Path) -> str:
     return raw.decode('utf-8', errors='replace')
 
 
+def resolve_file(root: Path, file: str) -> Path:
+    target = root / file
+    if target.is_file():
+        return safe_path(root, target)
+    filename = Path(file).name
+    ignored_dirs = {'.git', '.venv', '.uv-cache', 'build', 'dist', '__pycache__', '.devpulse'}
+    matches = [
+        p
+        for p in root.rglob(filename)
+        if p.is_file()
+        and not any(
+            part in ignored_dirs or part.startswith('.') for part in p.relative_to(root).parts
+        )
+    ]
+    if len(matches) == 1:
+        return safe_path(root, matches[0])
+    if len(matches) > 1:
+        options = ', '.join(p.relative_to(root).as_posix() for p in matches[:5])
+        raise ValueError(f"Ambiguous file '{file}'. Multiple matches found: {options}")
+    return safe_path(root, target)
+
+
 def collect(root: Path, *, file: str | None = None, worktree: bool = False) -> dict:
     root = root.resolve(strict=True)
     if file:
-        path = safe_path(root, root / file)
+        path = resolve_file(root, file)
         content = read_file(path)
         name = path.relative_to(root).as_posix()
         return {
