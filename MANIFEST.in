@@ -1,0 +1,5 @@
+prune .uv-cache
+prune .venv
+prune .devpulse
+recursive-include tests *.py
+include docs/architecture.md

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devpulse-ai"
+version = "0.2.0"
+description = "Local-first terminal code review with durable state and bounded project memory"
+requires-python = ">=3.11"
+license = "MIT"
+readme = "README.md"
+dependencies = []
+
+[project.scripts]
+devpulse = "devpulse.interfaces.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["devpulse*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B023"]
+
+[tool.ruff.format]
+quote-style = "single"

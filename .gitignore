@@ -1,0 +1,13 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.devpulse/*
+!.devpulse/RULES.md
+!.devpulse/MEMORY.md
+!.devpulse/skills/
+.env
+.coverage

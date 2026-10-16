@@ -1,0 +1,75 @@
+"""Read state metadata, maintain retention, and inspect installation health."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from ... import __version__
+from ...domain.privacy import Vault
+from ...infrastructure.config import load_config, state_home
+from ...infrastructure.context import assemble
+from ...infrastructure.state import State
+from ..output import emit
+
+
+def sessions(args, root: Path) -> int:
+    if not 1 <= args.limit <= 200:
+        raise ValueError('Session limit must be between 1 and 200.')
+    state = State(state_home())
+    rows = state.sessions(args.limit, state.identity(str(root)))
+    if args.json:
+        emit(rows, True)
+    else:
+        for row in rows:
+            emit(f'{row["id"]}  {row["status"]}')
+        if not rows:
+            emit('No review sessions for this project yet.')
+    return 0
+
+
+def cache(args, root: Path) -> int:
+    State(state_home()).clear_cache()
+    emit('Local response cache cleared.')
+    return 0
+
+
+def prune(args, root: Path) -> int:
+    if args.days < 1:
+        raise ValueError('Retention must be at least one day.')
+    emit(f'Removed {State(state_home()).prune(args.days)} old session(s).')
+    return 0
+
+
+def doctor(args, root: Path) -> int:
+    config = load_config(root)
+    state = State(state_home())
+    try:
+        version = subprocess.run(
+            ['git', '--version'], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        version = 'Git unavailable'
+    emit(
+        {
+            'version': __version__,
+            'python': sys.version.split()[0],
+            'git': version,
+            'state': str(state.home),
+            'project': str(root),
+            'providers': [
+                {
+                    'name': p.name,
+                    'kind': p.kind,
+                    'model': p.model,
+                    'credential_set': bool(os.environ.get(p.api_key_env))
+                    if p.kind != 'ollama'
+                    else None,
+                }
+                for p in config.providers
+            ],
+            'context': assemble(root, Vault(), config.context_bytes)['sources'],
+        },
+        True,
+    )
+    return 0
