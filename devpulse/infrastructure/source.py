@@ -62,8 +62,94 @@ def resolve_file(root: Path, file: str) -> Path:
     return safe_path(root, target)
 
 
-def collect(root: Path, *, file: str | None = None, worktree: bool = False) -> dict:
+def collect_all_project_files(root: Path) -> dict:
+    ignored_dirs = {
+        '.git',
+        '.venv',
+        '.uv-cache',
+        'build',
+        'dist',
+        '__pycache__',
+        '.devpulse',
+        'node_modules',
+        '.idea',
+        '.vscode',
+    }
+
+    candidate_paths = []
+    try:
+        raw_list = git(root, 'ls-files', '-z').split(b'\0')
+        for raw in raw_list:
+            if not raw:
+                continue
+            name = raw.decode('utf-8', errors='replace')
+            p = root / name
+            if p.is_file() and not any(
+                part in ignored_dirs or part.startswith('.') for part in Path(name).parts
+            ):
+                candidate_paths.append((name, p))
+    except Exception:
+        candidate_paths = []
+
+    if not candidate_paths:
+        for p in root.rglob('*'):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root)
+            if any(part in ignored_dirs or part.startswith('.') for part in rel.parts):
+                continue
+            candidate_paths.append((rel.as_posix(), p))
+
+    def file_priority(item):
+        name = item[0]
+        ext = Path(name).suffix.lower()
+        if ext in ('.py', '.ts', '.js', '.jsx', '.tsx', '.go', '.rs', '.java', '.c', '.cpp'):
+            return (0, name)
+        if ext in ('.json', '.yaml', '.yml', '.toml', '.sql', '.html', '.css', '.md'):
+            return (1, name)
+        return (2, name)
+
+    candidate_paths.sort(key=file_priority)
+
+    files = []
+    text_parts = [
+        f'Project review: {root.name} (full codebase scan - {len(candidate_paths)} file(s))'
+    ]
+    total_size = len(text_parts[0].encode('utf-8'))
+
+    for rel_name, full_path in candidate_paths:
+        try:
+            content = read_file(full_path)
+            content_bytes = len(content.encode('utf-8', errors='replace'))
+            files.append({'path': rel_name, 'content': content})
+            if total_size + content_bytes <= MAX_SOURCE:
+                text_parts.append(f'--- {rel_name} ---\n{content}')
+                total_size += content_bytes
+            if len(files) >= 150:
+                break
+        except Exception:
+            continue
+
+    if not files:
+        raise ValueError(f"No readable source files found in '{root}'.")
+
+    return {
+        'kind': 'project',
+        'text': '\n'.join(text_parts),
+        'files': files,
+    }
+
+
+def collect(
+    root: Path,
+    *,
+    file: str | None = None,
+    worktree: bool = False,
+    all_files: bool = False,
+) -> dict:
     root = root.resolve(strict=True)
+    if all_files or file in ('all', '.', '*', 'entire', 'project'):
+        return collect_all_project_files(root)
     if file:
         path = resolve_file(root, file)
         content = read_file(path)

@@ -11,6 +11,61 @@ from ..output import emit
 def handle(args, root: Path) -> int:
     source_text = ''
     target_path = getattr(args, 'file', None) or getattr(args, 'file_pos', None)
+    is_all = getattr(args, 'all', False) or target_path in ('all', '.', '*', 'entire', 'project')
+
+    if is_all:
+        from ...infrastructure.source import collect_all_project_files
+
+        source = collect_all_project_files(root)
+        files = source['files']
+        vault = Vault()
+        for f in files:
+            vault.scrub(f['content'])
+        errors = []
+        if vault.count > 0:
+            errors.append(
+                {
+                    'rule': 'secret-leak',
+                    'severity': 'error',
+                    'message': f'Secret detected ({vault.count} pattern(s) identified across project files).',
+                    'path': 'project',
+                    'line': 1,
+                }
+            )
+        findings = check_python(files)
+        for f in findings:
+            if f['severity'] == 'error':
+                errors.append(
+                    {
+                        'rule': f['rule'],
+                        'severity': f['severity'],
+                        'message': f['message'],
+                        'path': f['path'],
+                        'line': f['line'],
+                    }
+                )
+        as_json = getattr(args, 'json', False)
+        if errors:
+            if as_json:
+                emit(
+                    {'status': 'failed', 'files_checked': len(files), 'errors': errors},
+                    as_json=True,
+                )
+            else:
+                emit(
+                    f'DevPulse Verify Gate | FAILED ({len(errors)} error(s) found across {len(files)} files):'
+                )
+                for err in errors:
+                    emit(f'  ERROR {err["path"]}:{err["line"]} [{err["rule"]}] {err["message"]}')
+            return 2
+        if as_json:
+            emit({'status': 'clean', 'files_checked': len(files)}, as_json=True)
+        else:
+            emit(
+                f'DevPulse Verify Gate | Clean (verified {len(files)} file(s), no syntax errors or secrets detected)'
+            )
+        return 0
+
     is_python = True
 
     if target_path:
@@ -26,7 +81,7 @@ def handle(args, root: Path) -> int:
     elif not sys.stdin.isatty():
         source_text = sys.stdin.read()
     else:
-        raise ValueError('Provide --file, --code, or pipe source code via stdin.')
+        raise ValueError('Provide --file, --all, --code, or pipe source code via stdin.')
 
     vault = Vault()
     vault.scrub(source_text)

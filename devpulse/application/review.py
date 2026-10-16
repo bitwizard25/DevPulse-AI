@@ -101,7 +101,7 @@ class Engine:
             line.startswith(('+', '-')) and not line.startswith(('+++', '---'))
             for line in source['text'].splitlines()
         )
-        if changed > 500 and source['kind'] != 'file':
+        if changed > 500 and source['kind'] not in ('file', 'project'):
             findings.append(
                 finding(
                     'large-change',

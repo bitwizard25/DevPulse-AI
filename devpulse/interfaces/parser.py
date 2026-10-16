@@ -32,6 +32,11 @@ def parser() -> argparse.ArgumentParser:
     source.add_argument('--file', help='Review a whole file within the project.')
     source.add_argument('--worktree', action='store_true', help='Review tracked unstaged changes.')
     source.add_argument('--staged', action='store_true', help='Review staged changes (default).')
+    source.add_argument(
+        '--all',
+        action='store_true',
+        help='Review the entire codebase across all tracked project files.',
+    )
     review.add_argument(
         'file_pos',
         nargs='?',
@@ -115,7 +120,12 @@ def parser() -> argparse.ArgumentParser:
         'file_pos',
         nargs='?',
         metavar='FILE',
-        help='Target file to verify (e.g. devpulse verify bootstrap.py).',
+        help='Target file to verify (e.g. devpulse verify bootstrap.py or devpulse verify all).',
+    )
+    verify.add_argument(
+        '--all',
+        action='store_true',
+        help='Verify syntax and secrets across all files in the project.',
     )
     verify.add_argument('--code', help='Code snippet string to verify.')
     verify.add_argument('--json', action='store_true')

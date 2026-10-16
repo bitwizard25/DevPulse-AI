@@ -173,14 +173,19 @@ def run_interactive_menu(root: Path) -> int:
         elif choice == '1':
             try:
                 target = input(
-                    '\nEnter file to review (or press Enter for staged git changes): '
+                    '\nEnter file to review, or press Enter for entire codebase (type "staged" for git diff): '
                 ).strip()
             except (EOFError, KeyboardInterrupt):
                 target = ''
+            if not target or target.lower() in ('all', '.', '*', 'entire', 'project'):
+                target = 'all'
+            elif target.lower() == 'staged':
+                target = None
+
             emit('\nRunning code review...')
             try:
                 engine = make_engine(State(state_home()))
-                res = engine.review(root, load_config(root), mode='ai', file=target or None)
+                res = engine.review(root, load_config(root), mode='ai', file=target)
                 render_review(res)
             except Exception as exc:
                 emit(f'Review error: {str(exc)}')
@@ -188,14 +193,19 @@ def run_interactive_menu(root: Path) -> int:
         elif choice == '2':
             try:
                 target = input(
-                    '\nEnter file for offline checks (or press Enter for staged git changes): '
+                    '\nEnter file for offline checks, or press Enter for entire codebase (type "staged" for git diff): '
                 ).strip()
             except (EOFError, KeyboardInterrupt):
                 target = ''
+            if not target or target.lower() in ('all', '.', '*', 'entire', 'project'):
+                target = 'all'
+            elif target.lower() == 'staged':
+                target = None
+
             emit('\nRunning offline deterministic checks (syntax & secrets)...')
             try:
                 engine = make_engine(State(state_home()))
-                res = engine.review(root, load_config(root), mode='offline', file=target or None)
+                res = engine.review(root, load_config(root), mode='offline', file=target)
                 render_review(res)
             except Exception as exc:
                 emit(f'Offline review error: {str(exc)}')
@@ -224,12 +234,24 @@ def run_interactive_menu(root: Path) -> int:
         elif choice == '4':
             try:
                 target = input(
-                    '\nEnter relative file path to verify (e.g. devpulse/bootstrap.py): '
+                    '\nEnter file to verify, or press Enter for entire codebase: '
                 ).strip()
-                if target:
-                    verify.handle(
-                        type('Args', (), {'file': target, 'code': None, 'json': False})(), root
-                    )
+                if not target:
+                    target = 'all'
+                verify.handle(
+                    type(
+                        'Args',
+                        (),
+                        {
+                            'file': target,
+                            'file_pos': None,
+                            'all': False,
+                            'code': None,
+                            'json': False,
+                        },
+                    )(),
+                    root,
+                )
             except (EOFError, KeyboardInterrupt):
                 pass
             input('\nPress Enter to return to menu...')

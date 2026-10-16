@@ -15,9 +15,13 @@ def handle(args, root: Path) -> int:
         raise ValueError(
             '--detach requires a gateway-managed AI review; remove --offline and --direct.'
         )
+    target_file = args.file or getattr(args, 'file_pos', None)
+    if getattr(args, 'all', False) or target_file in ('all', '.', '*', 'entire', 'project'):
+        target_file = 'all'
+
     options = {
         'mode': 'offline' if args.offline else 'ai',
-        'file': args.file or getattr(args, 'file_pos', None),
+        'file': target_file,
         'worktree': args.worktree,
         'no_cache': args.no_cache,
         'chaos': args.chaos,
