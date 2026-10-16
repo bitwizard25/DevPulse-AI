@@ -23,10 +23,10 @@ The domain imports no application, infrastructure or presentation modules. The a
 
 | Directory | Responsibility |
 | --- | --- |
-| `devpulse/domain/` | Typed jobs/snapshots, pure configuration validation, secret masking, Python AST rules, model-result validation and output limits |
-| `devpulse/application/` | Review preparation/execution, durable worker, job use cases, context selection/budgets and provider routing; typed ports for adapters |
-| `devpulse/infrastructure/` | SQLite queue/index/circuit adapters and migrations, locks, Git/Markdown/configuration access, conservative token counter and bounded HTTP transport |
-| `devpulse/interfaces/` | Argument parser, focused command handlers, safe terminal rendering, terminal dashboard and authenticated loopback gateway |
+| `devpulse/domain/` | Typed jobs/snapshots, hardware entities and model rating formulas, MCP JSON-RPC schemas, pure configuration validation, secret masking, Python AST rules, model-result validation and output limits |
+| `devpulse/application/` | Review preparation/execution, durable worker, job use cases, MCP application service, context selection/budgets and provider routing; typed ports for adapters |
+| `devpulse/infrastructure/` | OS telemetry hardware probe and Ollama tags fetcher, agent integration adapters (Claude, Antigravity, Codex), SQLite queue/index/circuit adapters and migrations, locks, Git/Markdown/configuration access, conservative token counter and bounded HTTP transport |
+| `devpulse/interfaces/` | Argument parser, focused command handlers (`review`, `jobs`, `models`, `verify`, `mcp`, `integrate`), safe terminal rendering, terminal dashboard and authenticated loopback gateway |
 | `devpulse/bootstrap.py` | Composition root that constructs the review engine with concrete adapters |
 | `tests/` | Behavior, integration and architecture boundary tests; no live account needed |
 

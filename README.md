@@ -145,6 +145,64 @@ AI review starts the gateway automatically. Offline review stays in-process and 
 
 One gateway owns the local state directory and listens only on `127.0.0.1` with a random bearer token. Eight HTTP handlers are allowed, with at most four compatibility `/review` waits so inspection/cancellation/health retain capacity. The CLI uses nonblocking job submission plus polling. Attempt sessions from dead processes become `interrupted`; active direct reviews remain running, while durable jobs are recovered independently. `gateway run` runs in the foreground for diagnostics. No service is installed at OS startup.
 
+## Hardware Profiler and Model Sizing
+
+DevPulse reads system RAM, available VRAM, and GPU architecture via OS-native telemetry (Windows, Linux, macOS), rates popular and installed Ollama coding models, predicts tokens/second (TPS), and scores Coding IQ:
+
+```sh
+devpulse models
+devpulse models --json
+devpulse models --base-url http://127.0.0.1:11434
+```
+
+Models are classified into three safety tiers:
+- `VRAM FIT`: 100% GPU offload with maximum speed (30–60+ t/s).
+- `RAM FIT`: Fits in system RAM for CPU or hybrid offload (8–15 t/s).
+- `OOM DANGER`: Exceeds safe host memory thresholds; warns against Out-Of-Memory system freezes.
+
+## Compiler-as-a-Judge and Approval Gate
+
+Deterministic AST syntax checking and secret verification with standard exit codes:
+
+```sh
+devpulse verify --file your_code.py
+devpulse verify --code "def foo(): return 42"
+git diff | devpulse verify
+```
+
+- Exit code `0`: Clean (no syntax errors or secret leaks).
+- Exit code `2`: Gate blocked (syntax error or secret detected). This exit code 2 standard integrates directly with Claude Code and agent pre-tool hooks.
+
+## Multi-Agent Ecosystem Bridge and MCP Server
+
+DevPulse integrates natively as a co-processor with **Claude Code**, **Google Antigravity**, and **OpenAI Codex CLI**:
+
+```sh
+# Configure all agents at once
+devpulse integrate --all
+
+# Or target specific agents
+devpulse integrate --claude
+devpulse integrate --antigravity
+devpulse integrate --codex
+
+# Synchronize .devpulse/RULES.md to CLAUDE.md and AGENTS.md
+devpulse rules sync
+```
+
+Running the MCP Server directly:
+
+```sh
+devpulse mcp
+```
+
+DevPulse's MCP server exposes standard tools:
+- `devpulse_review`: Full code review and security auditing with secret scrubbing.
+- `devpulse_verify`: Deterministic AST syntax verification gate.
+- `devpulse_search_memory`: Search project rules, conventions, and codebase knowledge.
+- `devpulse_hardware_profile`: Read hardware telemetry and model sizing recommendations.
+- Resources: `devpulse://rules`, `devpulse://memory`.
+
 ## Privacy and limits
 
 Known key formats, credential assignments, bearer tokens, private keys and high-entropy strings are redacted locally before inference. Runtime provider keys are protected explicitly in reviews, memory commands and previews. Persisted data includes redacted prompts/snapshots, derived chunks, results and opaque identities. Raw source, credential values and secret-to-placeholder maps are not intentionally persisted. Provider error bodies are discarded, redirects are rejected, and remote providers require HTTPS. Human output strips terminal escape sequences.
@@ -153,7 +211,7 @@ Redaction is best effort and may miss secrets or mask ordinary values. This MVP 
 
 Existing state is upgraded to schema version 3 with a consistent SQLite backup before schema changes. Backups live under the state directory's `backups/`; retain them with `identity.key`. Snapshot expiry is logical database removal, not forensic erasure from WAL, filesystem snapshots or backups. Manage backup retention separately.
 
-This release does not provide patch application, GitHub PR/CI integration, MCP/hooks, embeddings/vector similarity caching, hardware rating, streaming/TTFT telemetry, autonomous agents or conversation summarization. Choose a model with an appropriate context window and split large reviews. Syntax validity does not establish semantic correctness.
+This release does not provide patch application, GitHub PR/CI automation, embeddings/vector similarity caching, autonomous agent loops or streaming token rendering. Choose a model with an appropriate context window and split large reviews. Syntax validity does not establish semantic correctness.
 
 ## Development
 

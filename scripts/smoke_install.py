@@ -128,6 +128,21 @@ def main():
                     time.sleep(0.1)
                 assert status['status'] == 'cancelled'
                 assert status['result'] is None
+
+                # Smoke test models profiler
+                models_out = json.loads(run('models', '--json'))
+                assert 'hardware' in models_out and 'ratings' in models_out
+
+                # Smoke test verify gate (clean vs broken)
+                assert run('verify', '--file', 'good.py') is not None
+                run('verify', '--file', 'bad.py', expected=2)
+
+                # Smoke test integrate command
+                integrate_out = json.loads(run('integrate', '--all', '--json'))
+                assert integrate_out['status'] == 'success'
+                assert (project / '.agents/mcp_config.json').is_file()
+                assert (project / 'CLAUDE.md').is_file()
+                assert (project / 'AGENTS.md').is_file()
         finally:
             run('gateway', 'stop')
             for _ in range(50):
