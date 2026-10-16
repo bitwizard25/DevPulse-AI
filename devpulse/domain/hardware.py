@@ -5,9 +5,9 @@ from enum import Enum
 
 
 class FitTier(str, Enum):
-    FIT_VRAM = "FIT_VRAM"  # 100% GPU offload, fast inference
-    FIT_RAM = "FIT_RAM"  # System RAM offload, viable CPU/hybrid inference
-    OOM_DANGER = "OOM_DANGER"  # Exceeds safe memory threshold; system freeze risk
+    FIT_VRAM = 'FIT_VRAM'  # 100% GPU offload, fast inference
+    FIT_RAM = 'FIT_RAM'  # System RAM offload, viable CPU/hybrid inference
+    OOM_DANGER = 'OOM_DANGER'  # Exceeds safe memory threshold; system freeze risk
 
 
 @dataclass(frozen=True)
@@ -35,14 +35,14 @@ class HardwareProfile:
 class ModelSpec:
     name: str
     params_billion: float
-    quantization: str = "Q4_K_M"
+    quantization: str = 'Q4_K_M'
     coding_iq: int = 70  # 0-100 benchmark-derived score
 
     @property
     def required_memory_gb(self) -> float:
         # Weights size estimate: 4-bit quant is ~0.55-0.65 GB per billion params
         # Plus ~0.8 - 1.2 GB KV cache overhead for standard context window (4k-8k)
-        quant_mult = 0.65 if "4" in self.quantization else 1.2
+        quant_mult = 0.65 if '4' in self.quantization else 1.2
         return (self.params_billion * quant_mult) + 0.8
 
 
@@ -61,17 +61,17 @@ class ModelCatalog:
     @staticmethod
     def default_models() -> list[ModelSpec]:
         return [
-            ModelSpec("qwen2.5-coder:1.5b", 1.5, "Q4_K_M", coding_iq=68),
-            ModelSpec("starcoder2:3b", 3.0, "Q4_K_M", coding_iq=65),
-            ModelSpec("llama3.2:3b", 3.2, "Q4_K_M", coding_iq=67),
-            ModelSpec("phi3.5:3.8b", 3.8, "Q4_K_M", coding_iq=72),
-            ModelSpec("deepseek-coder:6.7b", 6.7, "Q4_K_M", coding_iq=82),
-            ModelSpec("qwen2.5-coder:7b", 7.0, "Q4_K_M", coding_iq=85),
-            ModelSpec("codellama:7b", 7.0, "Q4_K_M", coding_iq=76),
-            ModelSpec("mistral:7b", 7.0, "Q4_K_M", coding_iq=74),
-            ModelSpec("qwen2.5-coder:14b", 14.0, "Q4_K_M", coding_iq=90),
-            ModelSpec("deepseek-coder-v2:16b", 16.0, "Q4_K_M", coding_iq=88),
-            ModelSpec("qwen2.5-coder:32b", 32.0, "Q4_K_M", coding_iq=93),
+            ModelSpec('qwen2.5-coder:1.5b', 1.5, 'Q4_K_M', coding_iq=68),
+            ModelSpec('starcoder2:3b', 3.0, 'Q4_K_M', coding_iq=65),
+            ModelSpec('llama3.2:3b', 3.2, 'Q4_K_M', coding_iq=67),
+            ModelSpec('phi3.5:3.8b', 3.8, 'Q4_K_M', coding_iq=72),
+            ModelSpec('deepseek-coder:6.7b', 6.7, 'Q4_K_M', coding_iq=82),
+            ModelSpec('qwen2.5-coder:7b', 7.0, 'Q4_K_M', coding_iq=85),
+            ModelSpec('codellama:7b', 7.0, 'Q4_K_M', coding_iq=76),
+            ModelSpec('mistral:7b', 7.0, 'Q4_K_M', coding_iq=74),
+            ModelSpec('qwen2.5-coder:14b', 14.0, 'Q4_K_M', coding_iq=90),
+            ModelSpec('deepseek-coder-v2:16b', 16.0, 'Q4_K_M', coding_iq=88),
+            ModelSpec('qwen2.5-coder:32b', 32.0, 'Q4_K_M', coding_iq=93),
         ]
 
 

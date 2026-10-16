@@ -37,15 +37,15 @@ def handle(args, root: Path) -> int:
             res = server.handle_request(req)
             # Notifications (like notifications/initialized) return None result
             if res.result is not None or res.error is not None:
-                sys.stdout.write(json.dumps(res.to_dict()) + "\n")
+                sys.stdout.write(json.dumps(res.to_dict()) + '\n')
                 sys.stdout.flush()
         except Exception as exc:
             err_res = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32700, "message": f"Parse error: {str(exc)}"},
+                'jsonrpc': '2.0',
+                'id': None,
+                'error': {'code': -32700, 'message': f'Parse error: {str(exc)}'},
             }
-            sys.stdout.write(json.dumps(err_res) + "\n")
+            sys.stdout.write(json.dumps(err_res) + '\n')
             sys.stdout.flush()
 
     return 0
