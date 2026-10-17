@@ -180,9 +180,14 @@ class AgentSession:
                 seen_ids.add(call_id)
                 validated_calls.append(ToolCall(call_id, call.name, call.arguments))
             safe_message = self.scrub(decision.message)
-            safe_decision = json.dumps(
-                scrub_structure(json.loads(raw), self.scrub), ensure_ascii=True
-            )
+            decision_value = scrub_structure(json.loads(raw), self.scrub)
+            if decision.discarded_tool_calls:
+                safe_message += (
+                    '\n\nDevPulse ignored a tool request paired with this final answer.'
+                )
+                decision_value['message'] = safe_message
+                decision_value['tool_calls'] = []
+            safe_decision = json.dumps(decision_value, ensure_ascii=True)
             self.messages.append({'role': 'assistant', 'content': safe_decision})
             self._persist('assistant', safe_decision)
             if decision.final:

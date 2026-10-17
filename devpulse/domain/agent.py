@@ -19,6 +19,7 @@ class AgentDecision:
     message: str
     tool_calls: tuple[ToolCall, ...]
     final: bool
+    discarded_tool_calls: bool = False
 
     @classmethod
     def parse(cls, raw: str) -> 'AgentDecision':
@@ -50,8 +51,6 @@ class AgentDecision:
             parsed.append(ToolCall(call['id'], call['name'], call['arguments']))
         if len({call.id for call in parsed}) != len(parsed):
             raise ValueError('Tool call IDs must be unique within a decision.')
-        if final and parsed:
-            raise ValueError('A final agent response cannot also request tools.')
         if not final and not parsed:
             raise ValueError('A non-final agent response must request at least one tool.')
-        return cls(message, tuple(parsed), final)
+        return cls(message, () if final else tuple(parsed), final, final and bool(parsed))
