@@ -85,20 +85,33 @@ class AgentContext:
             )
         omitted = 0
 
-        def append_optional(content, budget):
-            nonlocal omitted
+        def fit_optional(content, budget, *, required_key=None):
             # Tool evidence is JSON embedded in a message string. Fit the fully
             # serialized request, including that second layer of quote escaping.
             low, high, best = 0, max(0, budget), None
             while low <= high:
                 middle = (low + high) // 2
                 value, truncated = bounded_result(content, middle)
+                if required_key and (
+                    not isinstance(value, dict)
+                    or not isinstance(value.get(required_key), list)
+                    or not value[required_key]
+                    or value[required_key][-1].get('tool_call_id')
+                    != content[required_key][-1].get('tool_call_id')
+                ):
+                    high = middle - 1
+                    continue
                 candidate = {'role': 'user', 'content': encoded(value)}
                 if len(encoded([*messages, candidate])) <= self.budget:
                     best = candidate, truncated
                     low = middle + 1
                 else:
                     high = middle - 1
+            return best
+
+        def append_optional(content, budget):
+            nonlocal omitted
+            best = fit_optional(content, budget)
             if best:
                 messages.append(best[0])
                 omitted += int(best[1])
@@ -129,29 +142,44 @@ class AgentContext:
             omitted += len(history)
 
         if observations:
-            ledger = [
-                {
-                    'id': item['id'],
-                    'tool': item['name'],
-                    **{
-                        key: item['result'][key]
-                        for key in ('path', 'status', 'exit_code', 'error')
-                        if key in item['result']
-                    },
-                }
-                for item in observations[-12:]
-            ]
             remaining = self.budget - len(encoded(messages))
-            if remaining > 700:
-                append_optional({'completed_tool_activity': ledger}, min(1400, remaining // 3))
-            # Most recent tool evidence gets priority over stale source excerpts.
-            latest = observations[-1]
-            remaining = self.budget - len(encoded(messages))
-            append_optional(
-                {'tool_call_id': latest['id'], 'tool': latest['name'], 'result': latest['result']},
-                remaining - 80,
-            )
-            omitted += max(0, len(observations) - 1)
+            # Keep the newest result even when a batch of older outputs exhausts
+            # a small model's context. Add older results only when they also fit.
+            retained = False
+            window = observations[-12:]
+            for start in range(len(window)):
+                selected = window[start:]
+                results = [
+                    {'tool_call_id': item['id'], 'tool': item['name'], 'result': item['result']}
+                    for item in selected
+                ]
+                ledger = [
+                    {
+                        'id': item['id'],
+                        'tool': item['name'],
+                        **{
+                            key: item['result'][key]
+                            for key in ('path', 'status', 'exit_code', 'error')
+                            if key in item['result']
+                        },
+                    }
+                    for item in selected
+                ]
+                best = fit_optional(
+                    {'completed_tool_activity': ledger, 'tool_results': results},
+                    remaining - 80,
+                    required_key='tool_results',
+                )
+                if best:
+                    messages.append(best[0])
+                    omitted += int(best[1]) + start
+                    retained = True
+                    break
+            if not retained:
+                raise ValueError(
+                    'Latest tool result cannot fit the configured context budget; use a larger model context or reduce repository guidance.'
+                )
+            omitted += max(0, len(observations) - len(window))
         elif references:
             remaining = self.budget - len(encoded(messages))
             if remaining > 300:
@@ -159,8 +187,9 @@ class AgentContext:
 
         return messages, {
             'type': 'context',
-            'estimated_input_tokens': len(encoded(messages)),
-            'input_token_limit': self.budget,
+            'estimated_input_tokens': (len(encoded(messages)) + 1) // 2,
+            'input_token_limit': (self.budget + 1) // 2,
+            'serialized_bytes': len(encoded(messages)),
             'token_count_exact': False,
             'omitted_messages': omitted,
         }

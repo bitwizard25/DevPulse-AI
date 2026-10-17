@@ -4,6 +4,7 @@ import json
 import os
 import socket
 from urllib import error, request
+from urllib.parse import urlsplit
 
 from ..domain.errors import ProviderError
 from ..domain.models import ProviderConfig
@@ -25,6 +26,7 @@ def http_json(
     headers: dict | None = None,
     timeout: float = 90,
     local_error_details: bool = False,
+    service: str = 'Provider',
 ) -> dict:
     data = json.dumps(payload).encode('utf-8') if payload is not None else None
     req = request.Request(
@@ -32,8 +34,6 @@ def http_json(
     )
     try:
         # Ignore ambient HTTP proxies for loopback traffic.
-        from urllib.parse import urlsplit
-
         handlers = [NoRedirect()]
         if urlsplit(url).hostname in ('127.0.0.1', 'localhost', '::1'):
             handlers.append(request.ProxyHandler({}))
@@ -61,8 +61,26 @@ def http_json(
             f'Provider HTTP {exc.code}.' + detail,
             retryable=exc.code in (408, 429) or exc.code >= 500,
         ) from None
-    except (error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError):
-        raise ProviderError('Provider connection failed or timed out.', retryable=True) from None
+    except (error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+        reason = exc.reason if isinstance(exc, error.URLError) else exc
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            message = f'{service} request timed out after {timeout:g} seconds.'
+            if service == 'Ollama':
+                message += (
+                    ' The model may still be loading or running slowly. Check Ollama'
+                    ' and increase the provider timeout in .devpulse/config.json if needed.'
+                )
+        elif service == 'Ollama':
+            parsed = urlsplit(url)
+            # Include only the origin, never request paths or raw network errors.
+            origin = f'{parsed.scheme}://{parsed.netloc}'
+            message = (
+                f'Cannot connect to Ollama at {origin}. Start Ollama (ollama serve),'
+                ' check the configured base_url, then run devpulse doctor and retry.'
+            )
+        else:
+            message = 'Provider connection failed. Check the endpoint and network connectivity.'
+        raise ProviderError(message, retryable=True) from None
     except (ValueError, UnicodeError, RecursionError):
         raise ProviderError('Provider returned malformed JSON.') from None
 
@@ -85,6 +103,7 @@ def complete(config: ProviderConfig, prompt: str) -> dict:
                 },
             },
             timeout=config.timeout,
+            service='Ollama',
         )
         content = (
             result.get('message', {}).get('content')
@@ -138,6 +157,7 @@ def complete_agent(config: ProviderConfig, messages: list[dict]) -> str:
                 },
             },
             timeout=config.timeout,
+            service='Ollama',
         )
         content = (
             result.get('message', {}).get('content')

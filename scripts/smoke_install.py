@@ -50,6 +50,19 @@ def local_agent_provider(kind):
     """Exercise the installed CLI's real HTTP, edit, command and resume boundaries."""
     requests = []
 
+    def latest_tool_result(messages):
+        for message in reversed(messages):
+            if message.get('role') != 'user':
+                continue
+            try:
+                value = json.loads(message['content'])
+            except (ValueError, TypeError):
+                continue
+            results = value.get('tool_results')
+            if isinstance(results, list) and results:
+                return results[-1]['result']
+        raise AssertionError('Prompt did not retain the latest tool result.')
+
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
@@ -61,7 +74,7 @@ def local_agent_provider(kind):
             if step == 1:
                 call = ('read_file', {'path': 'retry.py'})
             elif step == 2:
-                evidence = json.loads(messages[-1]['content'])['result']
+                evidence = latest_tool_result(messages)
                 call = (
                     'edit_file',
                     {
@@ -83,7 +96,7 @@ def local_agent_provider(kind):
                     },
                 )
             elif step == 4:
-                evidence = json.loads(messages[-1]['content'])['result']
+                evidence = latest_tool_result(messages)
                 assert evidence['exit_code'] == 0 and 'verified' in evidence['output']
             value = {
                 'message': 'Updated and verified.' if not call else 'Working',

@@ -74,7 +74,7 @@ class BudgetTests(unittest.TestCase):
         import subprocess
 
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             project = root / 'project'
             project.mkdir()
             subprocess.run(['git', 'init', '-q', str(project)], check=True)

@@ -10,6 +10,7 @@ from ...domain.privacy import Vault
 from ...infrastructure.agent_sessions import SQLiteAgentSessions
 from ...infrastructure.config import load_config, state_home
 from ...infrastructure.context import assemble
+from ...infrastructure.provider_health import probe_provider
 from ...infrastructure.state import State
 from ..output import emit
 
@@ -79,6 +80,7 @@ def doctor(args, root: Path) -> int:
                     'name': p.name,
                     'kind': p.kind,
                     'model': p.model,
+                    'health': probe_provider(p),
                     'credential_set': bool(os.environ.get(p.api_key_env))
                     if p.kind != 'ollama'
                     else None,

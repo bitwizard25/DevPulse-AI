@@ -51,6 +51,19 @@ class AgentCommandTests(unittest.TestCase):
             (self.root / 'orphan-effect').exists(), 'Timed-out command left a live child process.'
         )
 
+    def test_successful_launcher_does_not_leave_a_detached_child(self):
+        child = (
+            'import time; from pathlib import Path; time.sleep(1); Path("orphan-effect").touch()'
+        )
+        parent = f'import subprocess,sys; subprocess.Popen([sys.executable,"-c",{child!r}])'
+        result = self.run_code(parent)
+        self.assertEqual(result['exit_code'], 0)
+        subprocess.run([sys.executable, '-c', 'import time; time.sleep(1.4)'], check=True)
+        self.assertFalse(
+            (self.root / 'orphan-effect').exists(),
+            'Completed command left a child process running.',
+        )
+
     def test_unknown_tool_fields_cannot_cause_file_effects(self):
         with self.assertRaisesRegex(ValueError, 'unknown fields'):
             self.tools.execute(

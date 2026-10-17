@@ -6,6 +6,7 @@ from typing import Callable, Protocol
 
 from ..domain.agent import AgentDecision
 from ..domain.agent_prompts import AGENT_SYSTEM
+from ..domain.agent_tools import validate_arguments
 from ..domain.errors import ProviderError
 from .agent_context import AgentContext, bounded_result, scrub_history, scrub_structure
 
@@ -141,6 +142,9 @@ class AgentSession:
         scoped = {}
         seen_ids = set()
         for turn in range(MAX_TURNS):
+            set_guidance = getattr(self.tools, 'set_guidance', None)
+            if set_guidance:
+                set_guidance([{'path': path, 'text': text} for path, text in scoped.items()])
             active_guidance = guidance + ''.join(
                 f'\n--- {path} ---\n{text}' for path, text in scoped.items()
             )
@@ -156,6 +160,17 @@ class AgentSession:
             self.on_event(metadata)
             raw = self.model(request_messages)
             decision = AgentDecision.parse(raw)
+            allowed_tools = {item.get('name') for item in tool_specs if isinstance(item, dict)}
+            local_ids = set()
+            guidance_required = False
+            for call in decision.tool_calls:
+                if call.name not in allowed_tools:
+                    raise ValueError('Agent requested a tool outside the available catalog.')
+                if call.id in seen_ids or call.id in local_ids:
+                    raise ValueError('Tool call IDs must be unique throughout a turn.')
+                local_ids.add(call.id)
+                validate_arguments(call.name, call.arguments)
+            seen_ids.update(local_ids)
             safe_message = self.scrub(decision.message)
             safe_decision = json.dumps(
                 scrub_structure(json.loads(raw), self.scrub), ensure_ascii=True
@@ -166,9 +181,7 @@ class AgentSession:
             if decision.final:
                 return safe_message
             for call in decision.tool_calls:
-                if call.id in seen_ids:
-                    raise ValueError('Tool call IDs must be unique throughout a turn.')
-                seen_ids.add(call.id)
+                safe_call_id = self.scrub(call.id)
                 safe_arguments = scrub_structure(call.arguments, self.scrub)
                 self.on_event(
                     {
@@ -178,7 +191,7 @@ class AgentSession:
                     }
                 )
                 if self.turn_id:
-                    self.store.begin_action(self.turn_id, call.id, call.name)
+                    self.store.begin_action(self.turn_id, safe_call_id, call.name)
                 try:
                     result = self.tools.execute(call.name, call.arguments)
                 except Exception as exc:
@@ -186,14 +199,19 @@ class AgentSession:
                 safe_result = scrub_structure(result, self.scrub)
                 for item in safe_result.get('instructions', []):
                     scoped[item['path']] = item['text']
+                guidance_required = (
+                    guidance_required or safe_result.get('status') == 'instructions_required'
+                )
                 if self.turn_id:
-                    self.store.finish_action(self.turn_id, call.id, safe_result)
+                    self.store.finish_action(self.turn_id, safe_call_id, safe_result)
                 safe_result, _ = bounded_result(safe_result, MAX_TOOL_RESULT_BYTES)
-                observations.append({'id': call.id, 'name': call.name, 'result': safe_result})
+                observations.append({'id': safe_call_id, 'name': call.name, 'result': safe_result})
                 rendered = json.dumps(safe_result, ensure_ascii=True)
                 self.messages.append(
-                    {'role': 'tool', 'content': f'Tool result {call.id}: {rendered}'}
+                    {'role': 'tool', 'content': f'Tool result {safe_call_id}: {rendered}'}
                 )
-                self._persist('tool', f'Tool result {call.id}: {rendered}')
+                self._persist('tool', f'Tool result {safe_call_id}: {rendered}')
                 self.on_event({'type': 'tool_end', 'name': call.name, 'result': rendered})
+                if guidance_required:
+                    break
         raise ValueError(f'Agent reached its {MAX_TURNS}-turn limit; ask it to continue.')

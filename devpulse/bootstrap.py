@@ -63,7 +63,7 @@ def make_agent_runtime(state: State, config) -> AgentRuntime:
 
 
 def make_agent_session(runtime, config, root, session_id, approve, on_event, vault):
-    available = min(
+    available_tokens = min(
         provider.context_window_tokens - provider.output_tokens - provider.safety_tokens
         for provider in config.providers
     )
@@ -74,7 +74,10 @@ def make_agent_session(runtime, config, root, session_id, approve, on_event, vau
         on_event=on_event,
         store=runtime.sessions,
         session_id=session_id,
-        context_budget_bytes=available,
+        # The agent packs JSON and source text, so reserve a conservative two
+        # UTF-8 bytes per configured input token rather than wasting the token
+        # allowance by treating every token as one byte.
+        context_budget_bytes=available_tokens * 2,
     )
 
 

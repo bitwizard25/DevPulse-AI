@@ -12,9 +12,9 @@ OpenClaw documents a persistent gateway as the source of truth for sessions and 
 
 DevPulse adopts these ideas at a smaller coding-agent scale:
 
-- Durable SQLite sessions and turn records, scoped to a project identity; the foreground terminal owns interactive approvals while the existing gateway owns review jobs.
+- Durable SQLite sessions and turn records, scoped to a project identity; the foreground terminal owns interactive model/tool execution and approvals while the existing gateway owns review jobs and provider circuits.
 - A compact workspace bootstrap assembled from `AGENTS.md`, `CLAUDE.md`, `.devpulse/RULES.md`, and relevant memory, with clear precedence and bounded context.
-- A task loop that chooses from a small typed tool catalog: inspect files, search, read, propose/apply an in-project patch, run a bounded verification command, and invoke DevPulse review.
+- A task loop that chooses from a small typed tool catalog: inspect files, search, read, propose/apply an in-project patch, run a bounded verification command, and invoke DevPulse review. Small-model reliability is improved with concise prompts, one tool call per model response, and newest-result-preserving context compaction.
 - Skills as on-demand task procedures with YAML frontmatter; only matching skills enter the prompt.
 - Visible progress, tool calls, diffs, and verification results in the terminal.
 
@@ -44,6 +44,6 @@ Subsequent launch resumes the latest project session. The user can type a task, 
 
 ## Delivery boundary
 
-The first harness release is a single-user, local coding agent. It does not add chat channels, remote workers, plugin marketplaces, unrestricted shell access, browser automation, automatic GitHub writes, or multi-agent orchestration. Those require separate policy and operational work.
+The first harness release is a single-user, local coding agent. It does not add chat channels, remote workers, plugin marketplaces, unrestricted shell access, browser automation, automatic GitHub writes, semantic embeddings, native Anthropic/Gemini agent adapters, or multi-agent orchestration. It does not claim equivalent task success to Codex or Claude Code; live model quality must be measured on a representative evaluation set. Those capabilities require separate policy and operational work.
 
 The core acceptance path is: launch in a configured repository, state a task, see repository discovery and a short plan, review a proposed change, let the harness apply it, and see actual verification output. The session remains inspectable after interruption or restart.

@@ -64,6 +64,8 @@ def latest_result(messages):
             value = json.loads(message['content'])
             if 'tool_call_id' in value:
                 return value['result']
+            if value.get('tool_results'):
+                return value['tool_results'][-1]['result']
         except (ValueError, TypeError):
             continue
     raise AssertionError('Latest tool evidence missing from model context.')

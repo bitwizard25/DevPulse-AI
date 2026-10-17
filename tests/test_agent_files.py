@@ -26,6 +26,18 @@ class AgentFileTests(unittest.TestCase):
         )
         self.assertTrue(result['truncated'])
 
+    def test_new_file_requires_nested_agents_guidance_before_mutation(self):
+        target = self.root / 'src'
+        target.mkdir()
+        (target / 'AGENTS.md').write_text('Use async IO in this folder.')
+        result = self.tools.execute('write_file', {'path': 'src/new.py', 'content': 'print(1)\n'})
+        self.assertEqual(result['status'], 'instructions_required')
+        self.assertIn('Use async IO', result['instructions'][0]['text'])
+        self.assertFalse((target / 'new.py').exists())
+        self.tools.files.set_guidance(result['instructions'])
+        result = self.tools.execute('write_file', {'path': 'src/new.py', 'content': 'print(1)\n'})
+        self.assertEqual(result['status'], 'written')
+
     def test_existing_file_requires_read_and_current_fingerprint(self):
         target = self.root / 'a.py'
         target.write_text('original\n')

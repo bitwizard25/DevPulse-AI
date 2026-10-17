@@ -7,11 +7,13 @@ from ..domain.privacy import Vault
 
 
 def safe_path(root: Path, path: Path) -> Path:
-    root = root.resolve()
+    root = Path(root)
+    path = Path(path)
+    root_resolved = root.resolve()
     resolved = path.resolve()
-    if not resolved.is_relative_to(root):
+    if not resolved.is_relative_to(root_resolved):
         raise ValueError('Path escapes the project directory.')
-    return resolved
+    return root / resolved.relative_to(root_resolved)
 
 
 def read_rules(root: Path, vault: Vault) -> dict:

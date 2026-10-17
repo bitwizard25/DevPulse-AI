@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 from ..domain.models import ProviderConfig
 from ..domain.prompts import SYSTEM
@@ -15,6 +16,7 @@ class ContextService:
         self.index, self.guidance_reader, self.identity = index, guidance_reader, identity
 
     def __call__(self, root, vault, budget=24000, query='') -> dict:
+        root = Path(root).resolve()
         guidance = self.guidance_reader(root, vault)
         report = self.index.refresh(root, vault)
         project = self.identity(str(root))

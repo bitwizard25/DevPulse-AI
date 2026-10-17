@@ -73,7 +73,7 @@ class StateTests(unittest.TestCase):
 class ContextTests(unittest.TestCase):
     def test_cutoff_cannot_expose_partial_private_key(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             (root / '.devpulse').mkdir()
             (root / '.devpulse/RULES.md').write_text(
                 '-----BEGIN PRIVATE KEY-----\n' + 'TOPSECRET' * 1000 + '\n-----END PRIVATE KEY-----'
@@ -83,7 +83,7 @@ class ContextTests(unittest.TestCase):
 
     def test_budget_and_redaction(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             (root / '.devpulse').mkdir()
             (root / '.devpulse/RULES.md').write_text('password="private-value"\n' + 'a' * 5000)
             result = assemble(root, Vault(), budget=1000)
@@ -93,7 +93,7 @@ class ContextTests(unittest.TestCase):
 
     def test_memory_changes_context(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             (root / '.devpulse').mkdir()
             first = assemble(root, Vault())
             (root / '.devpulse/MEMORY.md').write_text('Use parameterized SQL.')

@@ -16,6 +16,21 @@ class AgentFiles:
         self.workspace, self.approve, self.vault = workspace, approve, vault
         self._key = secrets.token_bytes(32)
         self._reads: dict = {}
+        self._guidance: dict[str, str] = {}
+
+    def set_guidance(self, items):
+        self._guidance = {item['path']: item['text'] for item in items}
+
+    def _require_guidance(self, path):
+        instructions = scoped_guidance(self.workspace.root, path, self.vault)
+        unseen = [item for item in instructions if self._guidance.get(item['path']) != item['text']]
+        if unseen:
+            return {
+                'status': 'instructions_required',
+                'path': path.relative_to(self.workspace.root).as_posix(),
+                'instructions': unseen,
+            }
+        return None
 
     def _fingerprint(self, raw):
         return hmac.new(self._key, raw, hashlib.sha256).hexdigest()
@@ -68,6 +83,9 @@ class AgentFiles:
 
     def write_file(self, args):
         path = self.workspace.path(args['path'])
+        required = self._require_guidance(path)
+        if required:
+            return required
         content = args.get('content')
         self._validate_content(content)
         if path.exists():
@@ -82,6 +100,9 @@ class AgentFiles:
 
     def edit_file(self, args):
         path = self.workspace.path(args['path'])
+        required = self._require_guidance(path)
+        if required:
+            return required
         raw = self._existing(path, args)
         old, new = args.get('old_text'), args.get('new_text')
         self._validate_content(new)

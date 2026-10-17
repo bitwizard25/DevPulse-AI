@@ -25,7 +25,7 @@ The domain imports no application, infrastructure or presentation modules. The a
 
 | Directory | Responsibility |
 | --- | --- |
-| `devpulse/domain/agent.py`, `agent_prompts.py` | Strict model decision contract and task harness prompt with repository-content trust boundaries |
+| `devpulse/domain/agent.py`, `agent_prompts.py` | Strict single-call model decision contract and concise task prompt optimized for smaller models |
 | `devpulse/application/` | Review and task orchestration, durable worker, job use cases, MCP service, context selection/budgets and provider routing; typed ports for adapters |
 | `devpulse/infrastructure/` | OS telemetry, agent integration adapters (Claude, Antigravity, Codex), bounded project tools, SQLite queue/index/circuit/session adapters and migrations, locks, Git/Markdown/configuration access and HTTP transport |
 | `devpulse/interfaces/` | Task-first terminal loop, focused command handlers (`review`, `jobs`, `models`, `verify`, `mcp`, `integrate`), safe terminal rendering and authenticated loopback gateway |
@@ -45,7 +45,7 @@ The domain imports no application, infrastructure or presentation modules. The a
 
 1. `devpulse` in a TTY opens the task prompt; `devpulse run "..."` provides a one-turn interface. First-run setup selects a provider source and initializes project rules/memory.
 2. The harness loads redacted prior messages, prepares bounded project rules/memory/code context, and gives the model a strict JSON decision contract plus a small typed tool catalog.
-3. Tool calls are validated and routed through project-scoped adapters. Paths cannot escape the repository; secret and generated areas are excluded. Writes display a diff and commands display their argv; each requires terminal approval.
+3. Tool calls are validated and routed through project-scoped adapters. Paths cannot escape the repository; secret and generated areas are excluded. Writes display a diff and commands display their argv; each requires terminal approval. A nested `AGENTS.md` is surfaced to the model before a write in that directory is allowed.
 4. Every model response, user turn, and tool result is scrubbed before local transcript storage. Context is bounded to the smallest configured provider input budget and old in-memory messages are dropped first.
 5. The user can resume the active project session, start a new one, clear the transcript, or inspect session IDs. The agent never claims verification succeeded unless a command or deterministic verifier returned success.
 
@@ -55,7 +55,7 @@ Persisted snapshots contain redacted prompts and precomputed findings, with conf
 
 ## Ownership, concurrency and failure
 
-State initialization is protected across processes. Version 4 migrations verify FTS5 and back up existing state before any schema change. Each operation uses a short transaction/connection. Job claims use `BEGIN IMMEDIATE`, ownership fencing, timestamps and FIFO insertion tie-breaking. Future schema versions fail closed. The gateway has an exclusive process lock and atomic discovery descriptor. Eight HTTP handlers allow only four blocking review waits; job controls retain capacity.
+State initialization is protected across processes. Version 5 migrations verify FTS5 and back up existing state before any schema change. Each operation uses a short transaction/connection. Job claims use `BEGIN IMMEDIATE`, ownership fencing, timestamps and FIFO insertion tie-breaking. Future schema versions fail closed. The gateway has an exclusive process lock and atomic discovery descriptor. Eight HTTP handlers allow only four blocking review waits; job controls retain capacity.
 
 Attempt sessions record process ownership for legacy/direct history. Durable jobs use a unique worker identity and five-second heartbeats. Only a new exclusive gateway owner performs restart recovery; its acquired process lock establishes that the prior gateway cannot still own the worker. Recovered jobs retain snapshot/expiry/attempt counts, and stale owners cannot complete them. Heartbeats provide active-attempt visibility rather than authorizing a second worker to steal a running HTTP request.
 
@@ -65,9 +65,9 @@ Provider transport has timeouts, bounded bytes, no redirects and no remote plain
 
 ## Retrieval and context contracts
 
-`MemoryIndex` stores project-isolated redacted chunks and fingerprints; Markdown/Git remain authoritative. Refresh reconciles edits and deletions. Retrieval uses quoted lexical FTS queries with bounded results and deterministic path/line ties, never semantic cache equivalence. Paths stay within the project, and tracked credential/generated/binary files are excluded. Index skip diagnostics are sampled and counted so metadata cannot overflow review transport limits.
+`MemoryIndex` stores project-isolated redacted chunks and fingerprints; Markdown/Git remain authoritative. Refresh reconciles edits and deletions. It scans tracked and non-ignored untracked Git paths, then excludes credential, generated, binary and oversized files under the 5000-path/20-MB bounds. Retrieval uses quoted lexical FTS queries with bounded results and deterministic path/line ties, never semantic cache equivalence. Task context prioritizes the newest tool evidence and evicts older results if required to fit; it fails clearly if even the latest result cannot fit.
 
-`TokenCounter` is replaceable. The initial conservative UTF-8 estimator is labeled estimated, includes the serialized user message and shared system prompt, and reserves output/framing tokens. `ContextPlanner` uses the smallest eligible provider input allowance. Mandatory source/rules remain complete; optional material uses bounded excerpts with provenance and omission reasons. The preview exposes these decisions without inference. Index, prompt and budget versions participate in cache identity.
+`TokenCounter` is replaceable. Review planning uses a conservative UTF-8 estimator, includes the serialized user message and shared system prompt, and reserves output/framing tokens. The task harness budgets serialized JSON at two bytes per configured input token; this intentionally leaves room for smaller-model context while avoiding the previous one-byte-per-token underuse. These are estimates, not tokenizer counts. Mandatory source/rules remain complete; optional material uses bounded excerpts with provenance and omission reasons. The preview exposes these decisions without inference. Index, prompt and budget versions participate in review cache identity.
 
 ## Extending the MVP
 

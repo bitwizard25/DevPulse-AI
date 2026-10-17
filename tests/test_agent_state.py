@@ -121,6 +121,56 @@ class AgentStateTests(unittest.TestCase):
         self.assertEqual(turn['status'], 'failed')
         self.assertEqual(self.store.actions(turn['id']), [])
 
+    def test_secret_shaped_model_call_ids_are_scrubbed_before_journaling(self):
+        vault = Vault()
+        secret_id = 'sk-ABCDEFGHIJKLMNOPQRSTUV'
+
+        class Tools:
+            def describe(self):
+                return [{'name': 'read_file'}]
+
+            def execute(self, name, arguments):
+                return {'status': 'read', 'path': 'source.py'}
+
+        responses = iter(
+            [
+                json.dumps(
+                    {
+                        'message': 'Read it',
+                        'tool_calls': [
+                            {
+                                'id': secret_id,
+                                'name': 'read_file',
+                                'arguments': {'path': 'source.py'},
+                            }
+                        ],
+                        'final': False,
+                    }
+                ),
+                json.dumps({'message': 'Done', 'tool_calls': [], 'final': True}),
+            ]
+        )
+        sent = []
+
+        def respond(messages):
+            sent.append(json.dumps(messages))
+            return next(responses)
+
+        session = AgentSession(
+            respond,
+            Tools(),
+            vault.scrub,
+            store=self.store,
+            session_id=self.session_id,
+        )
+        session.run('Inspect source', 'example')
+        turn = self.store.turns(self.session_id)[0]
+        action = self.store.actions(turn['id'])[0]
+        self.assertNotEqual(action['call_id'], secret_id)
+        self.assertNotIn(secret_id.encode(), (self.home / 'state.db').read_bytes())
+        self.assertTrue(sent)
+        self.assertFalse(any(secret_id in prompt for prompt in sent))
+
     def test_clear_removes_turn_and_action_history(self):
         turn = self.store.begin_turn(self.session_id, 'task')
         self.store.begin_action(turn, 'read', 'read_file')
@@ -133,8 +183,8 @@ class AgentStateTests(unittest.TestCase):
 
     def test_session_annotations_are_valid(self):
         import inspect
+
         ann_messages = inspect.get_annotations(SQLiteAgentSessions.messages)
         self.assertIn('return', ann_messages)
         ann_list = inspect.get_annotations(SQLiteAgentSessions.list)
         self.assertIn('return', ann_list)
-

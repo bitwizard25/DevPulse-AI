@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 
 MAX_AGENT_OUTPUT = 65536
-MAX_TOOL_CALLS = 4
+MAX_TOOL_CALLS = 1
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ class AgentGuidanceTests(unittest.TestCase):
         from devpulse.infrastructure.agent_guidance import read_agent_guidance
 
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / '.devpulse').mkdir()
             (root / 'src').mkdir()
             (root / 'AGENTS.md').write_text('Keep public API stable.')

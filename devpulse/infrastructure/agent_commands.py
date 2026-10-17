@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import time
 
+from .agent_process import WindowsProcessJob
+
 OUTPUT_LIMIT = 1024 * 1024
 
 
@@ -55,11 +57,12 @@ class AgentCommands:
         env.update({'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'CI': '1'})
         timeout = arguments.get('timeout', 60)
         options = (
-            {'creationflags': subprocess.CREATE_NO_WINDOW}
+            {'creationflags': subprocess.CREATE_NO_WINDOW | 0x00000004}
             if os.name == 'nt'
             else {'start_new_session': True}
         )
         process = None
+        process_job = None
         with tempfile.TemporaryFile() as output_file:
             try:
                 process = subprocess.Popen(
@@ -72,6 +75,57 @@ class AgentCommands:
                     stderr=subprocess.STDOUT,
                     **options,
                 )
+                if os.name == 'nt':
+                    process_job = WindowsProcessJob(process)
+                    # Start suspended, attach the kill-on-close job, then resume the
+                    # primary thread so it cannot spawn before containment is active.
+                    import ctypes
+                    from ctypes import wintypes
+
+                    class ThreadEntry(ctypes.Structure):
+                        _fields_ = [
+                            ('size', wintypes.DWORD),
+                            ('usage', wintypes.DWORD),
+                            ('thread_id', wintypes.DWORD),
+                            ('owner_pid', wintypes.DWORD),
+                            ('base_priority', wintypes.LONG),
+                            ('delta_priority', wintypes.LONG),
+                            ('flags', wintypes.DWORD),
+                        ]
+
+                    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+                    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+                    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+                    kernel.Thread32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+                    kernel.Thread32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+                    kernel.OpenThread.restype = wintypes.HANDLE
+                    kernel.OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+                    kernel.ResumeThread.argtypes = [wintypes.HANDLE]
+                    kernel.ResumeThread.restype = wintypes.DWORD
+                    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+                    snapshot = kernel.CreateToolhelp32Snapshot(0x4, 0)
+                    if snapshot == wintypes.HANDLE(-1).value:
+                        raise ctypes.WinError(ctypes.get_last_error())
+                    entry = ThreadEntry()
+                    entry.size = ctypes.sizeof(entry)
+                    try:
+                        found = kernel.Thread32First(snapshot, ctypes.byref(entry))
+                        while found:
+                            if entry.owner_pid == process.pid:
+                                thread_handle = kernel.OpenThread(0x2, False, entry.thread_id)
+                                if not thread_handle:
+                                    raise ctypes.WinError(ctypes.get_last_error())
+                                try:
+                                    if kernel.ResumeThread(thread_handle) == 0xFFFFFFFF:
+                                        raise ctypes.WinError(ctypes.get_last_error())
+                                finally:
+                                    kernel.CloseHandle(thread_handle)
+                                break
+                            found = kernel.Thread32Next(snapshot, ctypes.byref(entry))
+                        else:
+                            raise OSError('Could not find the contained command process thread.')
+                    finally:
+                        kernel.CloseHandle(snapshot)
                 deadline = time.monotonic() + timeout
                 timed_out = output_limited = False
                 while process.poll() is None:
@@ -87,8 +141,10 @@ class AgentCommands:
                 raw = output_file.read(OUTPUT_LIMIT + 1)
                 output_limited |= len(raw) > OUTPUT_LIMIT
             finally:
-                if process and process.poll() is None:
+                if process:
                     stop_command(process)
+                if process_job:
+                    process_job.close()
         text = (
             '[output limit reached; output discarded]'
             if output_limited

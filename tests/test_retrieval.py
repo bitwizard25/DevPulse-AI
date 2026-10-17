@@ -12,7 +12,7 @@ class RetrievalTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         self.state = State(self.root / 'state')
         self.index = SQLiteMemoryIndex(self.state)
         self.project = self.root / 'project'
@@ -55,11 +55,12 @@ class RetrievalTests(unittest.TestCase):
         self.index.refresh(self.project, vault)
         self.assertEqual(vault.count, 0)
 
-    def test_code_index_contains_only_safe_git_tracked_text(self):
+    def test_code_index_includes_nonignored_untracked_text_and_excludes_credentials(self):
         subprocess.run(['git', 'init', '-q', str(self.project)], check=True)
         for filename, text in [
             ('billing.py', 'def calculate_invoice_total(items):\n    return sum(items)\n'),
-            ('untracked.py', 'never_index_me'),
+            ('untracked.py', 'untracked_receipt_amount'),
+            ('ignored.py', 'ignored_invoice_total'),
             ('.env', 'PRIVATE=must-not-index'),
             ('generated/cache.py', 'generated_invoice'),
             ('binary.bin', '\x00binary'),
@@ -81,16 +82,22 @@ class RetrievalTests(unittest.TestCase):
             ],
             check=True,
         )
+        (self.project / '.gitignore').write_text('ignored.py\n')
         report = self.index.refresh(self.project, Vault())
         found = self.index.search(
             self.state.identity(str(self.project)), 'invoice total', kind='code'
         )
         self.assertEqual(found[0].path, 'billing.py')
+        untracked = self.index.search(
+            self.state.identity(str(self.project)), 'untracked receipt', kind='code'
+        )
+        self.assertEqual(untracked[0].path, 'untracked.py')
         self.assertEqual(found[0].start, 1)
         with self.state.connect() as db:
             paths = {row[0] for row in db.execute('SELECT path FROM documents')}
         self.assertNotIn('.env', paths)
-        self.assertNotIn('untracked.py', paths)
+        self.assertIn('untracked.py', paths)
+        self.assertNotIn('ignored.py', paths)
         self.assertNotIn('generated/cache.py', paths)
         self.assertNotIn('binary.bin', paths)
         self.assertTrue(report.skipped)

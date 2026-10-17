@@ -39,6 +39,9 @@ class ProjectTools:
         }
         return handlers[name](arguments)
 
+    def set_guidance(self, items):
+        self.files.set_guidance(items)
+
     def list_files(self, args):
         query = args.get('query', '').casefold()
         paths = []

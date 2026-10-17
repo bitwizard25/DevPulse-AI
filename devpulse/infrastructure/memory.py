@@ -196,9 +196,16 @@ class SQLiteMemoryIndex:
             if len(skill_files) > 20:
                 report.skipped.append('Skills after the first 20 paths were omitted.')
         try:
-            names = sorted(filter(None, git(root, 'ls-files', '-z', '--').split(b'\0')))
+            names = sorted(
+                filter(
+                    None,
+                    git(
+                        root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--'
+                    ).split(b'\0'),
+                )
+            )
         except (ValueError, OSError, subprocess.SubprocessError):
-            report.skipped.append('Code retrieval unavailable: no readable Git tracked-file list.')
+            report.skipped.append('Code retrieval unavailable: no readable Git file list.')
             return candidates
         for raw in names[:5000]:
             name = raw.decode('utf-8', errors='replace')
@@ -216,7 +223,7 @@ class SQLiteMemoryIndex:
             candidates.append((root / path, 'code'))
         if len(names) > 5000:
             report.skipped.append(
-                f'{len(names) - 5000} tracked paths omitted by the 5000-file limit.'
+                f'{len(names) - 5000} tracked or untracked paths omitted by the 5000-file limit.'
             )
         return candidates
 
