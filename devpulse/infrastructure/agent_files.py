@@ -7,6 +7,7 @@ import secrets
 
 from .agent_guidance import scoped_guidance
 from .agent_workspace import AgentWorkspace
+from .context import relative_to_root
 from .files import atomic_write_bytes
 from .source import MAX_SOURCE
 
@@ -27,7 +28,7 @@ class AgentFiles:
         if unseen:
             return {
                 'status': 'instructions_required',
-                'path': path.relative_to(self.workspace.root).as_posix(),
+                'path': relative_to_root(self.workspace.root, path).as_posix(),
                 'instructions': unseen,
             }
         return None
@@ -60,7 +61,7 @@ class AgentFiles:
         fingerprint = self._fingerprint(raw)
         self._reads[path] = (fingerprint, not truncated)
         return {
-            'path': path.relative_to(self.workspace.root).as_posix(),
+            'path': relative_to_root(self.workspace.root, path).as_posix(),
             'content': ''.join(selected),
             'start_line': start,
             'end_line': max(start - 1, end),
@@ -128,7 +129,7 @@ class AgentFiles:
     def _commit(self, path, before, after):
         if len(after) > MAX_SOURCE:
             raise ValueError('Edited file exceeds 512 KB.')
-        name = path.relative_to(self.workspace.root).as_posix()
+        name = relative_to_root(self.workspace.root, path).as_posix()
         diff = ''.join(
             difflib.unified_diff(
                 (before or b'').decode('utf-8').splitlines(keepends=True),

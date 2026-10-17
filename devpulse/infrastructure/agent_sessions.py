@@ -164,7 +164,7 @@ class SQLiteAgentSessions:
     def finish_action(self, turn_id, call_id, result):
         summary = {
             key: result[key]
-            for key in ('status', 'path', 'exit_code', 'timed_out', 'error')
+            for key in ('status', 'path', 'exit_code', 'timed_out', 'error', 'provenance')
             if key in result
         }
         status = (

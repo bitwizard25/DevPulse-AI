@@ -109,6 +109,46 @@ class AgentSession:
         if self.store and self.session_id:
             self.store.append(self.session_id, role, content)
 
+    @staticmethod
+    def _reuse_read_result(call: ToolCall, observations: list[dict]) -> dict | None:
+        if call.name != 'read_file':
+            return None
+        arguments = call.arguments
+        path = str(arguments.get('path', '')).replace('\\', '/')
+        start = arguments.get('start_line', 1)
+        limit = arguments.get('limit', 200)
+        for observation in reversed(observations):
+            result = observation['result']
+            if observation['name'] == 'run_command':
+                return None
+            if (
+                observation['name'] in ('edit_file', 'write_file')
+                and result.get('status') == 'written'
+                and str(result.get('path', '')).replace('\\', '/') == path
+            ):
+                return None
+            if observation['name'] != 'read_file':
+                continue
+            if str(result.get('path', '')).replace('\\', '/') != path:
+                continue
+            total = result.get('total_lines')
+            result_start = result.get('start_line')
+            result_end = result.get('end_line')
+            if (
+                type(total) is not int
+                or type(result_start) is not int
+                or type(result_end) is not int
+                or type(start) is not int
+                or type(limit) is not int
+                or start > total
+            ):
+                continue
+            requested_end = min(total, start + limit - 1)
+            covered = result_start <= start and result_end >= requested_end
+            if covered and isinstance(result.get('content'), str):
+                return {**result, 'provenance': 'reused prior read'}
+        return None
+
     def run(self, task: str, project_name: str, guidance: str = '', references=()) -> str:
         if not task.strip() or len(task.encode('utf-8')) > 12000:
             raise ValueError('Task must contain 1 to 12 KB of text.')
@@ -208,7 +248,9 @@ class AgentSession:
                 if self.turn_id:
                     self.store.begin_action(self.turn_id, safe_call_id, call.name)
                 try:
-                    result = self.tools.execute(call.name, call.arguments)
+                    result = self._reuse_read_result(call, observations)
+                    if result is None:
+                        result = self.tools.execute(call.name, call.arguments)
                 except Exception as exc:
                     result = {'error': self.scrub(str(exc))[:2000]}
                 safe_result = scrub_structure(result, self.scrub)

@@ -1,13 +1,16 @@
 """Explicit, Git-trackable project memory. No inferred memory or hidden edits."""
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import NamedTuple
 
+from ..domain.hardware import ProviderTokenBudget, initial_token_budget
 from ..domain.models import Config, ProviderConfig
 from ..domain.privacy import Vault
-from .context import safe_path
+from .context import relative_to_root, safe_path
 from .files import ProcessLock, atomic_write
+from .hardware import probe_hardware
 
 RULES = """# Project review rules
 
@@ -52,6 +55,15 @@ CLOUD_PRESETS = {
 }
 
 
+def _initial_provider_token_limits(provider_kind: str) -> dict:
+    budget = (
+        initial_token_budget(probe_hardware(), local=True)
+        if provider_kind == 'ollama'
+        else ProviderTokenBudget()
+    )
+    return asdict(budget)
+
+
 def initialize(
     root: Path,
     *,
@@ -83,6 +95,7 @@ def initialize(
                     model=model or (preset.model if preset else 'qwen2.5-coder:7b'),
                     base_url=base_url or default_url,
                     api_key_env=api_key_env or default_key,
+                    **_initial_provider_token_limits(provider),
                 ).validate()
             ]
         files = {
@@ -97,7 +110,7 @@ def initialize(
             path = safe_path(root, base / name)
             if not path.exists():
                 atomic_write(path, content)
-                created.append(str(path.relative_to(root)))
+                created.append(relative_to_root(root, path).as_posix())
         return created
 
 
@@ -142,6 +155,7 @@ def set_model(
         else preset.base_url if preset else 'https://api.openai.com/v1'
     )
     default_key = preset.api_key_env if preset else ''
+    token_limits = _initial_provider_token_limits(provider_kind)
 
     data = {'providers': [], 'context_bytes': 24000, 'cache_ttl': 86400}
     if config_path.is_file():
@@ -161,6 +175,7 @@ def set_model(
                 model=model_name,
                 base_url=base_url or default_url,
                 api_key_env=default_key,
+                **token_limits,
             )
             updated = True
             selected = p
@@ -173,6 +188,7 @@ def set_model(
             model=model_name,
             base_url=base_url or default_url,
             api_key_env=default_key,
+            **token_limits,
         )
         updated = True
         selected = p
@@ -183,6 +199,7 @@ def set_model(
             'model': model_name,
             'base_url': base_url or default_url,
             'api_key_env': default_key,
+            **token_limits,
         }
         providers.insert(0, selected)
     providers = [selected] + [item for item in providers if item is not selected]

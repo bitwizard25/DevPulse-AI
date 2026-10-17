@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from .context import safe_path
+from .context import relative_to_root, safe_path
 from .source import MAX_SOURCE, git
 
 EXCLUDED = frozenset(
@@ -50,7 +50,7 @@ class AgentWorkspace:
         if Path(value).is_absolute():
             raise ValueError('Use a project-relative path.')
         target = safe_path(self.root, self.root / value)
-        relative = target.relative_to(self.root)
+        relative = relative_to_root(self.root, target)
         if any(part.casefold() in EXCLUDED for part in relative.parts):
             raise ValueError('This path is excluded from agent access.')
         if (
@@ -93,7 +93,7 @@ class AgentWorkspace:
             if path in seen or not path.is_file():
                 continue
             seen.add(path)
-            yield path.relative_to(self.root), path
+            yield relative_to_root(self.root, path), path
             if len(seen) >= 5000:
                 return
 
@@ -106,4 +106,4 @@ class AgentWorkspace:
                 if name.casefold() not in EXCLUDED and not (base / name).is_symlink()
             )
             for name in sorted(files):
-                yield (base / name).relative_to(self.root).as_posix()
+                yield relative_to_root(self.root, base / name).as_posix()

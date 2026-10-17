@@ -1,4 +1,6 @@
 import concurrent.futures
+import ctypes
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,6 +73,21 @@ class StateTests(unittest.TestCase):
 
 
 class ContextTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows short-path regression')
+    def test_context_accepts_short_project_root_alias(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / '.devpulse').mkdir()
+            (root / '.devpulse/RULES.md').write_text('Keep public API stable.')
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = ctypes.windll.kernel32.GetShortPathNameW(str(root), buffer, len(buffer))
+            if not length or Path(buffer.value) == root:
+                self.skipTest('Filesystem did not provide a distinct short path')
+            short_root = Path(buffer.value)
+            result = assemble(short_root, Vault())
+            self.assertIn('Keep public API stable.', result['text'])
+            self.assertEqual(result['sources'], ['.devpulse/RULES.md'])
+
     def test_cutoff_cannot_expose_partial_private_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()

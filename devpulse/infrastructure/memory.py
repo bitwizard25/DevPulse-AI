@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..domain.memory import IndexReport, MemoryChunk
 from ..domain.privacy import Vault
-from .context import safe_path
+from .context import relative_to_root, safe_path
 from .source import git
 from .state import State
 
@@ -136,7 +136,7 @@ class SQLiteMemoryIndex:
                         'Remaining code omitted: 20 MB project indexing limit reached.'
                     )
                     break
-                name = vault.scrub(path.relative_to(root).as_posix())
+                name = vault.scrub(relative_to_root(root, path).as_posix())
                 content = vault.scrub(raw.decode('utf-8', errors='strict'))
                 documents.append((name, kind, self.state.identity(raw.hex()), content))
             except (OSError, ValueError, UnicodeError):

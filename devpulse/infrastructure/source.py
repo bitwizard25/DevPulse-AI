@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from .context import safe_path
+from .context import relative_to_root, safe_path, same_path
 
 MAX_SOURCE = 512000
 
@@ -51,13 +51,13 @@ def resolve_file(root: Path, file: str) -> Path:
         for p in root.rglob(filename)
         if p.is_file()
         and not any(
-            part in ignored_dirs or part.startswith('.') for part in p.relative_to(root).parts
+            part in ignored_dirs or part.startswith('.') for part in relative_to_root(root, p).parts
         )
     ]
     if len(matches) == 1:
         return safe_path(root, matches[0])
     if len(matches) > 1:
-        options = ', '.join(p.relative_to(root).as_posix() for p in matches[:5])
+        options = ', '.join(relative_to_root(root, p).as_posix() for p in matches[:5])
         raise ValueError(f"Ambiguous file '{file}'. Multiple matches found: {options}")
     return safe_path(root, target)
 
@@ -95,7 +95,7 @@ def collect_all_project_files(root: Path) -> dict:
         for p in root.rglob('*'):
             if not p.is_file():
                 continue
-            rel = p.relative_to(root)
+            rel = relative_to_root(root, p)
             if any(part in ignored_dirs or part.startswith('.') for part in rel.parts):
                 continue
             candidate_paths.append((rel.as_posix(), p))
@@ -153,14 +153,14 @@ def collect(
     if file:
         path = resolve_file(root, file)
         content = read_file(path)
-        name = path.relative_to(root).as_posix()
+        name = relative_to_root(root, path).as_posix()
         return {
             'kind': 'file',
             'text': f'File: {name}\n{content}',
             'files': [{'path': name, 'content': content}],
         }
     top = Path(git(root, 'rev-parse', '--show-toplevel').decode().strip()).resolve()
-    if top != root:
+    if not same_path(top, root):
         raise ValueError(
             'For diff reviews, use the repository root as --project so project rules and file paths agree.'
         )

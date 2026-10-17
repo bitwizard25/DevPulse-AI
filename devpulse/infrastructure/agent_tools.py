@@ -5,6 +5,7 @@ from ..domain.checks import check_python, finding
 from .agent_commands import AgentCommands
 from .agent_files import AgentFiles
 from .agent_workspace import AgentWorkspace
+from .context import relative_to_root
 
 
 class ProjectTools:
@@ -78,7 +79,7 @@ class ProjectTools:
     def verify_file(self, args):
         path = self.workspace.path(args['path'])
         content = self.workspace.read(path).decode('utf-8')
-        name = path.relative_to(self.workspace.root).as_posix()
+        name = relative_to_root(self.workspace.root, path).as_posix()
         vault = self.vault.fork()
         vault.scrub(content)
         findings = check_python([{'path': name, 'content': content}])

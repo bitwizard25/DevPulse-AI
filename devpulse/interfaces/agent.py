@@ -74,6 +74,8 @@ def run(args, root: Path) -> int:
                 result = json.loads(event['result'])
                 if result.get('status') == 'denied':
                     print('  denied by user', file=output)
+                elif result.get('provenance') == 'reused prior read':
+                    print('  reused previous file read', file=output)
                 elif result.get('status') == 'written':
                     print(f'  wrote {result.get("path")}', file=output)
                 elif result.get('status') == 'completed':

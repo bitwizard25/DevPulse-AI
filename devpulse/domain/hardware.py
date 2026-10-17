@@ -57,6 +57,25 @@ class ModelRating:
     ram_percent: float
 
 
+@dataclass(frozen=True)
+class ProviderTokenBudget:
+    context_window_tokens: int = 8192
+    output_tokens: int = 2048
+    safety_tokens: int = 1024
+
+
+def initial_token_budget(profile: HardwareProfile, *, local: bool) -> ProviderTokenBudget:
+    """Choose a conservative initial Ollama budget on memory-limited hosts."""
+    constrained = (
+        profile.total_ram_gb <= 8
+        or profile.available_ram_gb < 2
+        or 0 < profile.vram_gb <= 4.5
+    )
+    if local and constrained:
+        return ProviderTokenBudget(4096, 512, 256)
+    return ProviderTokenBudget()
+
+
 class ModelCatalog:
     @staticmethod
     def default_models() -> list[ModelSpec]:

@@ -2,7 +2,7 @@
 
 import hashlib
 
-from .context import safe_path
+from .context import relative_to_root, safe_path
 
 
 def _read(root, path, vault):
@@ -15,7 +15,7 @@ def _read(root, path, vault):
         raise ValueError(
             'Repository instructions exceed 128 KB; curate them or use a larger model context.'
         )
-    return {'path': path.relative_to(root).as_posix(), 'text': vault.scrub(raw.decode('utf-8'))}
+    return {'path': relative_to_root(root, path).as_posix(), 'text': vault.scrub(raw.decode('utf-8'))}
 
 
 def read_agent_guidance(root, vault):

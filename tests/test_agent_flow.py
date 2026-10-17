@@ -83,6 +83,12 @@ class AgentFlowTests(unittest.TestCase):
             def decide(step, _messages):
                 if step == 1:
                     return decision('read_file', {'path': 'retry.py'}, 'read')
+                if step == 2:
+                    return decision(
+                        'read_file',
+                        {'path': 'retry.py', 'start_line': 1, 'limit': 2},
+                        'read-again',
+                    )
                 return {
                     'message': 'Retry when attempts is less than 10.',
                     'tool_calls': [
@@ -128,11 +134,16 @@ class AgentFlowTests(unittest.TestCase):
 
             self.assertEqual(code, 0, err.getvalue())
             self.assertIn('less than 10', json.loads(out.getvalue())['message'])
-            self.assertEqual(len(requests), 2)
+            self.assertEqual(len(requests), 3)
             sessions = SQLiteAgentSessions(State(state_home))
             turn = sessions.turns(json.loads(out.getvalue())['session_id'])[0]
             self.assertEqual(turn['status'], 'succeeded')
-            self.assertEqual([action['name'] for action in sessions.actions(turn['id'])], ['read_file'])
+            actions = sessions.actions(turn['id'])
+            self.assertEqual([action['name'] for action in actions], ['read_file', 'read_file'])
+            self.assertNotIn('provenance', json.loads(actions[0]['result']))
+            self.assertEqual(
+                json.loads(actions[1]['result'])['provenance'], 'reused prior read'
+            )
 
     def test_same_coding_task_works_with_ollama_and_api_and_resumes(self):
         for kind in ('ollama', 'openai-compatible'):

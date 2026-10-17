@@ -5,6 +5,7 @@ from devpulse.domain.hardware import (
     HardwareProfile,
     ModelCatalog,
     ModelSpec,
+    initial_token_budget,
     rate_models,
 )
 
@@ -64,6 +65,27 @@ class HardwareDomainTests(unittest.TestCase):
         ratings = rate_models(profile, models)
         # In a 16GB VRAM card, 14B fits in VRAM and has highest IQ, so it should rank top
         self.assertEqual(ratings[0].spec.name, 'best:14b')
+
+    def test_small_ollama_budget_is_conservative_but_cloud_budget_is_unchanged(self):
+        profile = HardwareProfile(
+            total_ram_bytes=8 * 1024**3,
+            available_ram_bytes=800 * 1024**2,
+            vram_bytes=4 * 1024**3,
+            gpu_name='NVIDIA GeForce RTX 2050',
+            os_name='Windows',
+        )
+
+        local = initial_token_budget(profile, local=True)
+        cloud = initial_token_budget(profile, local=False)
+
+        self.assertEqual(
+            (local.context_window_tokens, local.output_tokens, local.safety_tokens),
+            (4096, 512, 256),
+        )
+        self.assertEqual(
+            (cloud.context_window_tokens, cloud.output_tokens, cloud.safety_tokens),
+            (8192, 2048, 1024),
+        )
 
 
 if __name__ == '__main__':
