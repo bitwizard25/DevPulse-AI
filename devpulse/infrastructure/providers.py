@@ -4,7 +4,7 @@ import json
 import os
 import socket
 from urllib import error, request
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from ..domain.errors import ProviderError
 from ..domain.models import ProviderConfig
@@ -111,26 +111,7 @@ def complete(config: ProviderConfig, prompt: str) -> dict:
             else None
         )
     else:
-        key = os.environ.get(config.api_key_env)
-        if not key:
-            raise ProviderError(
-                f'Set the environment variable {config.api_key_env} for this provider.'
-            )
-        result = http_json(
-            config.base_url.rstrip('/') + '/chat/completions',
-            payload={
-                'model': config.model,
-                'messages': messages,
-                'response_format': {'type': 'json_object'},
-                'max_completion_tokens': config.output_tokens,
-            },
-            headers={'Authorization': 'Bearer ' + key},
-            timeout=config.timeout,
-        )
-        try:
-            content = result['choices'][0]['message']['content']
-        except (KeyError, IndexError, TypeError):
-            content = None
+        content = _complete_cloud(config, messages)
     if not isinstance(content, str):
         raise ProviderError('Provider response has no text content.')
     try:
@@ -165,26 +146,91 @@ def complete_agent(config: ProviderConfig, messages: list[dict]) -> str:
             else None
         )
     else:
-        key = os.environ.get(config.api_key_env)
-        if not key:
-            raise ProviderError(
-                f'Set the environment variable {config.api_key_env} for this provider.'
-            )
-        result = http_json(
-            config.base_url.rstrip('/') + '/chat/completions',
-            payload={
-                'model': config.model,
-                'messages': messages,
-                'response_format': {'type': 'json_object'},
-                'max_completion_tokens': config.output_tokens,
-            },
-            headers={'Authorization': 'Bearer ' + key},
-            timeout=config.timeout,
-        )
-        try:
-            content = result['choices'][0]['message']['content']
-        except (KeyError, IndexError, TypeError):
-            content = None
+        content = _complete_cloud(config, messages)
     if not isinstance(content, str):
         raise ProviderError('Provider response has no text content.')
     return content
+
+
+def _complete_cloud(config: ProviderConfig, messages: list[dict]) -> str | None:
+    key = os.environ.get(config.api_key_env)
+    if not key:
+        raise ProviderError(
+            f'Set the environment variable {config.api_key_env} for this provider.'
+        )
+    base = config.base_url.rstrip('/')
+    if config.kind == 'anthropic':
+        system = '\n\n'.join(m['content'] for m in messages if m.get('role') == 'system')
+        conversation = [
+            {
+                'role': 'assistant' if m.get('role') == 'assistant' else 'user',
+                'content': m.get('content', ''),
+            }
+            for m in messages
+            if m.get('role') != 'system'
+        ]
+        result = http_json(
+            base + '/messages',
+            payload={
+                'model': config.model,
+                'max_tokens': config.output_tokens,
+                'system': system,
+                'messages': conversation,
+            },
+            headers={'x-api-key': key, 'anthropic-version': '2023-06-01'},
+            timeout=config.timeout,
+        )
+        blocks = result.get('content')
+        if not isinstance(blocks, list):
+            return None
+        return '\n'.join(
+            block['text']
+            for block in blocks
+            if isinstance(block, dict) and isinstance(block.get('text'), str)
+        )
+
+    if config.kind == 'google':
+        system = '\n\n'.join(m['content'] for m in messages if m.get('role') == 'system')
+        conversation = [
+            {
+                'role': 'model' if m.get('role') == 'assistant' else 'user',
+                'parts': [{'text': m.get('content', '')}],
+            }
+            for m in messages
+            if m.get('role') != 'system'
+        ]
+        result = http_json(
+            f'{base}/models/{quote(config.model, safe="-_.")}:generateContent',
+            payload={
+                'systemInstruction': {'parts': [{'text': system}]},
+                'contents': conversation,
+                'generationConfig': {
+                    'responseMimeType': 'application/json',
+                    'maxOutputTokens': config.output_tokens,
+                    'temperature': 0,
+                },
+            },
+            headers={'x-goog-api-key': key},
+            timeout=config.timeout,
+        )
+        try:
+            parts = result['candidates'][0]['content']['parts']
+            return ''.join(part['text'] for part in parts if isinstance(part.get('text'), str))
+        except (KeyError, IndexError, TypeError):
+            return None
+
+    result = http_json(
+        base + '/chat/completions',
+        payload={
+            'model': config.model,
+            'messages': messages,
+            'response_format': {'type': 'json_object'},
+            'max_completion_tokens': config.output_tokens,
+        },
+        headers={'Authorization': 'Bearer ' + key},
+        timeout=config.timeout,
+    )
+    try:
+        return result['choices'][0]['message']['content']
+    except (KeyError, IndexError, TypeError):
+        return None

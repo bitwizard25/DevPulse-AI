@@ -72,6 +72,68 @@ def latest_result(messages):
 
 
 class AgentFlowTests(unittest.TestCase):
+    def test_final_answer_with_redundant_tool_request_finishes_without_running_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'project'
+            root.mkdir()
+            (root / '.devpulse').mkdir()
+            (root / 'retry.py').write_text('return attempts < 10\n')
+            state_home = Path(directory) / 'state'
+
+            def decide(step, _messages):
+                if step == 1:
+                    return decision('read_file', {'path': 'retry.py'}, 'read')
+                return {
+                    'message': 'Retry when attempts is less than 10.',
+                    'tool_calls': [
+                        {
+                            'id': 'read-again',
+                            'name': 'read_file',
+                            'arguments': {'path': 'retry.py'},
+                        }
+                    ],
+                    'final': True,
+                }
+
+            with model_server(decide) as (url, requests):
+                (root / '.devpulse/config.json').write_text(
+                    json.dumps(
+                        {
+                            'providers': [
+                                {
+                                    'name': 'fixture',
+                                    'kind': 'ollama',
+                                    'base_url': url,
+                                    'model': 'fixture-model',
+                                }
+                            ]
+                        }
+                    )
+                )
+                out, err = io.StringIO(), io.StringIO()
+                with (
+                    patch.dict(os.environ, {'DEVPULSE_HOME': str(state_home)}),
+                    contextlib.redirect_stdout(out),
+                    contextlib.redirect_stderr(err),
+                ):
+                    code = main(
+                        [
+                            '--project',
+                            str(root),
+                            'run',
+                            'Read retry.py and report the condition.',
+                            '--json',
+                        ]
+                    )
+
+            self.assertEqual(code, 0, err.getvalue())
+            self.assertIn('less than 10', json.loads(out.getvalue())['message'])
+            self.assertEqual(len(requests), 2)
+            sessions = SQLiteAgentSessions(State(state_home))
+            turn = sessions.turns(json.loads(out.getvalue())['session_id'])[0]
+            self.assertEqual(turn['status'], 'succeeded')
+            self.assertEqual([action['name'] for action in sessions.actions(turn['id'])], ['read_file'])
+
     def test_same_coding_task_works_with_ollama_and_api_and_resumes(self):
         for kind in ('ollama', 'openai-compatible'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:

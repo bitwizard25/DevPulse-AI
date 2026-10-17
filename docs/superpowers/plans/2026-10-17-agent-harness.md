@@ -105,3 +105,11 @@ Implementation boundary: interactive task turns run in the foreground process so
 - Added distinct connection/timeout recovery messages and a bounded, no-inference `doctor` probe for Ollama service/model availability.
 - Regression tests were observed failing before implementation. The full suite then passed 135 tests with one platform-specific skip; Ruff and the installed-wheel smoke passed.
 - Reinstalled the global build after closing the terminal session and stopping its idle editor MCP helper. Verified the global `doctor` and task command now report the unavailable Ollama service explicitly. Live inference remains unverified until a server and model are available.
+
+### Online provider picker and global package update (2026-10-17)
+
+- Added native OpenAI-compatible, Anthropic Messages API and Google Gemini GenerateContent adapters for both reviews and task sessions. API key values are only read from the selected environment variable.
+- Added setup choices for OpenAI, Anthropic and Google Gemini, including provider-specific model, endpoint and environment-variable defaults. Re-running `devpulse setup` keeps rules/memory and updates provider selection; offline selection clears only the provider list.
+- Set the default OpenAI model to `gpt-6-luna-fast` for online setup and `init --provider openai-compatible`; Anthropic and Google presets currently use `claude-sonnet-5` and `gemini-3.8-flash`.
+- Bumped package version to 0.3.2 and reinstalled globally. Confirmed global `devpulse --version` and provider choices in `devpulse init --help`.
+- Did not run the full test suite or Ruff for this update. No live cloud request was possible without API keys. Live Ollama responded to a short connectivity prompt in 144.09 seconds, with 110.11 seconds spent loading; this is not a task-quality measurement.

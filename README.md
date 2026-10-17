@@ -24,7 +24,7 @@ devpulse
 devpulse run "Find why login retries never stop and fix it" --allow-edits --allow-commands --json
 ```
 
-The task harness requires a configured Ollama or OpenAI-compatible provider. First launch offers a one-choice setup and never downloads models. Each project has an active resumable local session. `devpulse` resumes it on the next launch; `/new` starts another, `/clear` deletes the current transcript, `/status` shows its ID and model, and `/quit` exits. Use `devpulse run --session SESSION_ID "..."` to resume a specific session. Conversation text is secret-scrubbed and stored in the local SQLite state database. Non-interactive runs deny writes and commands unless `--allow-edits` and `--allow-commands` are explicitly provided.
+The task harness supports Ollama, OpenAI, Anthropic and Google Gemini. First launch asks whether to use a local model, an online API (then asks which provider), or offline checks. New OpenAI setups default to `gpt-6-luna-fast`. Each project has an active resumable local session. `devpulse` resumes it on the next launch; `/new` starts another, `/clear` deletes the current transcript, `/status` shows its ID and model, and `/quit` exits. Use `devpulse run --session SESSION_ID "..."` to resume a specific session. Conversation text is secret-scrubbed and stored in the local SQLite state database. Non-interactive runs deny writes and commands unless `--allow-edits` and `--allow-commands` are explicitly provided.
 
 ## First review without a model
 
@@ -56,13 +56,17 @@ devpulse review
 
 If a model request fails, run `devpulse doctor`. It probes Ollama's model list with a five-second timeout and reports `ready`, `unavailable`, `model_missing`, or `invalid_response`, without loading a model or sending source code. A configured model name alone does not mean Ollama is installed or running. Start an installed service with `ollama serve`; download a missing model separately with `ollama pull MODEL`. Connection failures and slow-model timeouts have separate recovery messages. Cloud credentials are checked locally; `doctor` does not send cloud inference requests.
 
-## Cloud endpoint and failover
+## Online providers and failover
 
-An adapter for OpenAI-compatible Chat Completions endpoints is included. The endpoint must support JSON-object responses. Set its key in the environment, then initialize with an exact model name:
+The setup wizard offers OpenAI, Anthropic and Google Gemini. It configures native APIs for each service and stores only the environment variable name in project config. Set the key in your shell before running DevPulse:
 
 ```sh
-devpulse init --provider openai-compatible --model YOUR_MODEL --base-url https://YOUR_PROVIDER/v1 --api-key-env MY_PROVIDER_KEY
+devpulse init --provider openai-compatible
+devpulse init --provider anthropic
+devpulse init --provider google
 ```
+
+The default model IDs are `gpt-6-luna-fast`, `claude-sonnet-5`, and `gemini-3.8-flash`. Override them with `--model`. Their default key variables are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_API_KEY`. For example, in PowerShell set `$env:OPENAI_API_KEY = "your-key"` for the current terminal session. `devpulse setup` opens the provider picker again and updates the active provider while keeping project rules and memory.
 
 For failover, edit `.devpulse/config.json`:
 
@@ -79,10 +83,10 @@ For failover, edit `.devpulse/config.json`:
     },
     {
       "name": "cloud",
-      "kind": "openai-compatible",
+      "kind": "anthropic",
       "model": "YOUR_CLOUD_MODEL",
-      "base_url": "https://YOUR_PROVIDER/v1",
-      "api_key_env": "MY_PROVIDER_KEY",
+      "base_url": "https://api.anthropic.com/v1",
+      "api_key_env": "ANTHROPIC_API_KEY",
       "timeout": 90
     }
   ],
@@ -93,9 +97,7 @@ For failover, edit `.devpulse/config.json`:
 
 Providers are tried in order. Three transient failures open a persistent circuit for 30 seconds in the shared gateway. Durable jobs allow three attempts with jittered exponential backoff for connection failures, timeouts, HTTP 408/429 and 5xx responses. Invalid model output and missing credentials fail without automatic retry. `review --chaos --no-cache` simulates failure of the first provider; configure a second provider to see successful failover. `--direct` runs AI review in the CLI process instead, with process-local circuits.
 
-Provider configuration also accepts `context_window_tokens` (default 8192), `output_tokens` (2048), and `safety_tokens` (1024). Ollama receives explicit `num_ctx`/`num_predict` settings; OpenAI-compatible endpoints must support `max_completion_tokens` as well as JSON-object responses. Configure a window that your actual model and hardware support.
-
-The gateway inherits credentials when it starts. After changing an environment key, stop and restart it from that shell. Native Anthropic and Gemini adapters are deferred.
+Provider configuration also accepts `context_window_tokens` (default 8192), `output_tokens` (2048), and `safety_tokens` (1024). Ollama receives explicit `num_ctx`/`num_predict` settings. The gateway inherits credentials when it starts. After changing an environment key, stop and restart it from that shell.
 
 ## State, memory, context
 

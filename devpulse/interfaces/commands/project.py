@@ -13,8 +13,6 @@ from ..output import emit
 
 
 def init(args, root: Path) -> int:
-    if args.provider == 'openai-compatible' and args.model == 'qwen2.5-coder:7b':
-        raise ValueError('Provide --model with an exact model name for the cloud endpoint.')
     created = initialize(
         root,
         provider=args.provider,

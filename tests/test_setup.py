@@ -17,13 +17,13 @@ class SetupTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve()
 
-    def setup_with_choice(self, choice):
+    def setup_with_choice(self, *choices):
         with (
-            patch('builtins.input', return_value=choice) as prompt,
+            patch('builtins.input', side_effect=choices) as prompt,
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(run_setup_wizard(self.root), 0)
-        self.assertEqual(prompt.call_count, 1)
+        self.assertEqual(prompt.call_count, len(choices))
         return json.loads((self.root / '.devpulse/config.json').read_text('utf-8'))
 
     @patch('devpulse.interfaces.setup.installed_model_names', return_value=[])
@@ -54,6 +54,6 @@ class SetupTests(unittest.TestCase):
         initialize(self.root, provider='offline')
         rules = self.root / '.devpulse/RULES.md'
         rules.write_text('Keep our project conventions.')
-        config = self.setup_with_choice('2')
+        config = self.setup_with_choice('2', '1')
         self.assertEqual(config['providers'][0]['kind'], 'openai-compatible')
         self.assertEqual(rules.read_text(), 'Keep our project conventions.')

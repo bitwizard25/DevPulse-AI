@@ -23,13 +23,15 @@ def parser() -> argparse.ArgumentParser:
         'init', help='Create config, rules, memory and a review skill; preserve existing files.'
     )
     init.add_argument(
-        '--provider', choices=['ollama', 'openai-compatible', 'offline'], default='ollama'
+        '--provider',
+        choices=['ollama', 'openai-compatible', 'anthropic', 'google', 'offline'],
+        default='ollama',
     )
     init.add_argument(
-        '--model', default='qwen2.5-coder:7b', help='Exact installed/provider model name.'
+        '--model', help='Exact installed/provider model name (provider default if omitted).'
     )
     init.add_argument('--base-url')
-    init.add_argument('--api-key-env', default='OPENAI_API_KEY')
+    init.add_argument('--api-key-env', help='Environment variable containing the provider API key.')
     run = commands.add_parser('run', help='Work on a task in the current project with the agent.')
     run.add_argument('task', nargs='+', help='Task described in plain language.')
     run.add_argument('--permissions', choices=['ask', 'edit', 'auto'], default=argparse.SUPPRESS)

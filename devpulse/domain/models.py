@@ -37,8 +37,8 @@ class ProviderConfig:
         ):
             raise ValueError('Provider fields must be strings.')
         parsed = urlsplit(self.base_url)
-        if self.kind not in ('ollama', 'openai-compatible'):
-            raise ValueError('Provider kind must be ollama or openai-compatible.')
+        if self.kind not in ('ollama', 'openai-compatible', 'anthropic', 'google'):
+            raise ValueError('Provider kind must be ollama, openai-compatible, anthropic or google.')
         if (
             parsed.scheme not in ('http', 'https')
             or not parsed.hostname
@@ -61,8 +61,8 @@ class ProviderConfig:
             raise ValueError(
                 'api_key_env must be an environment variable name, never a credential value.'
             )
-        if self.kind == 'openai-compatible' and not self.api_key_env:
-            raise ValueError('OpenAI-compatible providers require an api_key_env variable name.')
+        if self.kind != 'ollama' and not self.api_key_env:
+            raise ValueError('Cloud providers require an api_key_env variable name.')
         return self
 
 
