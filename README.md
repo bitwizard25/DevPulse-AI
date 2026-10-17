@@ -1,8 +1,8 @@
 # DevPulse AI
 
-A local-first terminal code reviewer with a single-process gateway, durable review state, and explicit project memory. Python 3.11+, Git, no Docker and no required runtime packages.
+A local-first terminal coding harness and code reviewer with a single-process gateway, durable sessions, and explicit project memory. Python 3.11+, Git, no Docker and no required runtime packages.
 
-This is a working MVP. Reviews never modify source files, run model-generated commands, or post to GitHub.
+The review commands remain read-only. The task harness can propose project file changes and commands, but asks before writing or executing them. It does not post to GitHub.
 
 ## Install from this checkout
 
@@ -13,6 +13,18 @@ devpulse --help
 ```
 
 The distribution is named `devpulse-ai`; the executable is `devpulse`. It has not been published to PyPI. To run without installation, use `python -m devpulse` from this checkout.
+
+## Work by describing a task
+
+Inside a configured repository, launch `devpulse` and describe the result you want. DevPulse loads project rules, relevant memory and code, then uses a bounded tool loop to inspect files, search, propose edits and run checks. It shows progress as it works. Before each file write or command, it displays the diff or command and asks for approval.
+
+```sh
+devpulse
+# Describe the task at the prompt
+devpulse run "Find why login retries never stop and fix it" --allow-edits --allow-commands --json
+```
+
+The task harness requires a configured Ollama or OpenAI-compatible provider. First launch offers a one-choice setup and never downloads models. Each project has an active resumable local session. `devpulse` resumes it on the next launch; `/new` starts another, `/clear` deletes the current transcript, `/status` shows its ID and model, and `/quit` exits. Use `devpulse run --session SESSION_ID "..."` to resume a specific session. Conversation text is secret-scrubbed and stored in the local SQLite state database. Non-interactive runs deny writes and commands unless `--allow-edits` and `--allow-commands` are explicitly provided.
 
 ## First review without a model
 
@@ -100,7 +112,7 @@ devpulse prune --days 30
 - `.devpulse/RULES.md`: review conventions, included first.
 - `.devpulse/MEMORY.md`: explicitly recorded decisions, retrieved by relevance, with a bounded fallback when no query matches.
 - `.devpulse/skills/*/SKILL.md`: up to 20 review skills indexed in deterministic path order. Markdown and YAML frontmatter are review guidance; they cannot execute tools.
-- `~/.devpulse/state.db`: SQLite WAL jobs, expiring redacted snapshots, session metadata, redacted results, exact cache, provider circuits and an FTS5 index. Set `DEVPULSE_HOME` to choose another directory.
+- `~/.devpulse/state.db`: SQLite WAL jobs, expiring redacted snapshots, review and agent session metadata, redacted conversation turns/results, exact cache, provider circuits and an FTS5 index. Set `DEVPULSE_HOME` to choose another directory.
 - `~/.devpulse/identity.key`: local HMAC key for project and cache identities; keep it with state backups.
 
 Commit rules, memory and skills. Keep local config, state and credentials out of Git. Project memory is never automatically learned from source or old model responses. Curate it directly as it grows. FTS5 is required; startup reports an actionable error if the Python SQLite build lacks it.
@@ -132,7 +144,7 @@ Snapshots expire 24 hours after initial submission; expiry removes replay payloa
 
 Recovery is at least once at the provider boundary: a crash after a provider accepted a request can cause another billed request. The tool executes no code or patches, and cannot provide exactly-once remote inference. Job result/history metadata remains inspectable separately from expiring snapshots.
 
-## Gateway and terminal dashboard
+## Gateway and terminal session
 
 ```sh
 devpulse gateway start
@@ -141,7 +153,7 @@ devpulse tui
 devpulse gateway stop
 ```
 
-AI review starts the gateway automatically. Offline review stays in-process and makes no inference/network request. The small line-oriented terminal dashboard offers staged reviews, offline checks, memory and session history.
+AI review starts the gateway automatically. Offline review stays in-process and makes no inference/network request. `devpulse tui` opens the same task-first terminal session as launching `devpulse` with no arguments.
 
 One gateway owns the local state directory and listens only on `127.0.0.1` with a random bearer token. Eight HTTP handlers are allowed, with at most four compatibility `/review` waits so inspection/cancellation/health retain capacity. The CLI uses nonblocking job submission plus polling. Attempt sessions from dead processes become `interrupted`; active direct reviews remain running, while durable jobs are recovered independently. `gateway run` runs in the foreground for diagnostics. No service is installed at OS startup.
 

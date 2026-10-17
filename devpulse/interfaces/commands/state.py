@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ... import __version__
 from ...domain.privacy import Vault
+from ...infrastructure.agent_sessions import SQLiteAgentSessions
 from ...infrastructure.config import load_config, state_home
 from ...infrastructure.context import assemble
 from ...infrastructure.state import State
@@ -17,12 +18,28 @@ def sessions(args, root: Path) -> int:
     if not 1 <= args.limit <= 200:
         raise ValueError('Session limit must be between 1 and 200.')
     state = State(state_home())
-    rows = state.sessions(args.limit, state.identity(str(root)))
+    project = state.identity(str(root))
+    rows = [{'kind': 'review', **row} for row in state.sessions(args.limit, project)]
+    for row in SQLiteAgentSessions(state).list(project, args.limit):
+        rows.append(
+            {
+                'kind': 'agent',
+                'id': row['id'],
+                'project': row['project'],
+                'status': row['status'],
+                'started': row['created'],
+                'finished': row['updated'],
+                'error': None,
+                'title': row['title'],
+            }
+        )
+    rows.sort(key=lambda item: item['started'] or 0, reverse=True)
+    rows = rows[: args.limit]
     if args.json:
         emit(rows, True)
     else:
         for row in rows:
-            emit(f'{row["id"]}  {row["status"]}')
+            emit(f'{row["id"]}  {row["kind"]}  {row["status"]}')
         if not rows:
             emit('No review sessions for this project yet.')
     return 0

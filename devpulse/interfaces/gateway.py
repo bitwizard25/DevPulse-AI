@@ -127,6 +127,8 @@ def ensure_gateway(home: Path) -> dict:
     )
     child = subprocess.Popen(
         [sys.executable, '-m', 'devpulse', 'gateway', 'run'],
+        # A background gateway must not pin the caller's project directory on Windows.
+        cwd=package_root,
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

@@ -38,7 +38,7 @@ MCP_PROTOCOL_VERSION = '2024-11-05'
 
 MCP_SERVER_INFO = {
     'name': 'devpulse',
-    'version': '0.2.0',
+    'version': '0.3.0',
 }
 
 MCP_TOOLS = [

@@ -114,6 +114,21 @@ def _parse_param_size(val: str) -> float:
     return float(match.group(1)) if match else 7.0
 
 
+def installed_model_names(base_url: str = 'http://127.0.0.1:11434') -> list[str]:
+    try:
+        data = http_json(f'{base_url.rstrip("/")}/api/tags', timeout=2.0)
+        models = data.get('models', [])
+        if not isinstance(models, list):
+            return []
+        return [
+            item['name']
+            for item in models
+            if isinstance(item, dict) and isinstance(item.get('name'), str)
+        ]
+    except Exception:
+        return []
+
+
 def fetch_models(base_url: str = 'http://127.0.0.1:11434') -> list[ModelSpec]:
     clean_url = base_url.rstrip('/')
     try:

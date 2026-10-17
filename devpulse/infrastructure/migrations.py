@@ -4,7 +4,7 @@ import sqlite3
 import time
 from contextlib import closing
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 
 def migrate(db, home, previous: int):
@@ -27,6 +27,12 @@ def migrate(db, home, previous: int):
     add_owner = (
         'ALTER TABLE sessions ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0;'
         if old_columns and 'owner_pid' not in old_columns
+        else ''
+    )
+    agent_columns = {row['name'] for row in db.execute('PRAGMA table_info(agent_sessions)')}
+    add_permission = (
+        "ALTER TABLE agent_sessions ADD COLUMN permission TEXT NOT NULL DEFAULT 'ask';"
+        if agent_columns and 'permission' not in agent_columns
         else ''
     )
     db.executescript(
@@ -63,7 +69,33 @@ def migrate(db, home, previous: int):
         CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
             project UNINDEXED, path, kind UNINDEXED, start UNINDEXED, end UNINDEXED, text
         );
-        PRAGMA user_version=3;
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+            id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
+            status TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL,
+            permission TEXT NOT NULL DEFAULT 'ask'
+        );
+        """
+        + add_permission
+        + """
+        CREATE INDEX IF NOT EXISTS agent_sessions_project ON agent_sessions(project,updated);
+        CREATE TABLE IF NOT EXISTS agent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+            role TEXT NOT NULL, content TEXT NOT NULL, created REAL NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS agent_messages_session ON agent_messages(session_id,id);
+        CREATE TABLE IF NOT EXISTS agent_turns (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL, task TEXT NOT NULL,
+            status TEXT NOT NULL, started REAL NOT NULL, finished REAL, summary TEXT, error TEXT,
+            FOREIGN KEY(session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS agent_turns_session ON agent_turns(session_id,started);
+        CREATE TABLE IF NOT EXISTS agent_actions (
+            turn_id TEXT NOT NULL, call_id TEXT NOT NULL, name TEXT NOT NULL,
+            status TEXT NOT NULL, result TEXT, PRIMARY KEY(turn_id,call_id),
+            FOREIGN KEY(turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
+        );
+        PRAGMA user_version=5;
         COMMIT;
     """
     )

@@ -45,6 +45,79 @@ def local_provider():
         server.server_close()
 
 
+@contextmanager
+def local_agent_provider(kind):
+    """Exercise the installed CLI's real HTTP, edit, command and resume boundaries."""
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            requests.append(body)
+            messages = body['messages']
+            assert 'smoke-agent-private' not in json.dumps(messages)
+            step = len(requests)
+            call = None
+            if step == 1:
+                call = ('read_file', {'path': 'retry.py'})
+            elif step == 2:
+                evidence = json.loads(messages[-1]['content'])['result']
+                call = (
+                    'edit_file',
+                    {
+                        'path': 'retry.py',
+                        'old_text': 'return attempts < 10',
+                        'new_text': 'return attempts < 3',
+                        'expected_fingerprint': evidence['fingerprint'],
+                    },
+                )
+            elif step == 3:
+                call = (
+                    'run_command',
+                    {
+                        'argv': [
+                            sys.executable,
+                            '-c',
+                            'from retry import retry; assert retry(2); assert not retry(3); print("verified")',
+                        ]
+                    },
+                )
+            elif step == 4:
+                evidence = json.loads(messages[-1]['content'])['result']
+                assert evidence['exit_code'] == 0 and 'verified' in evidence['output']
+            value = {
+                'message': 'Updated and verified.' if not call else 'Working',
+                'tool_calls': [{'id': str(step), 'name': call[0], 'arguments': call[1]}]
+                if call
+                else [],
+                'final': not bool(call),
+            }
+            content = json.dumps(value)
+            payload = (
+                {'message': {'content': content}}
+                if kind == 'ollama'
+                else {'choices': [{'message': {'content': content}}]}
+            )
+            raw = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *_):
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f'http://127.0.0.1:{server.server_port}', requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
 def main():
     checkout = Path(__file__).resolve().parents[1]
     import devpulse
@@ -150,9 +223,48 @@ def main():
                     break
                 time.sleep(0.1)
         assert not (home / 'gateway.json').exists()
-        print(
-            'Installed wheel smoke passed: CLI, memory search/context, redaction, syntax, history, durable jobs/results/cancellation, gateway lifecycle.'
-        )
+        for kind in ('ollama', 'openai-compatible'):
+            with local_agent_provider(kind) as (url, requests):
+                (project / 'retry.py').write_text(
+                    'password="smoke-agent-private"\ndef retry(attempts):\n    return attempts < 10\n',
+                    encoding='utf-8',
+                )
+                config = {
+                    'providers': [
+                        {
+                            'name': 'fixture',
+                            'kind': kind,
+                            'model': 'fixture',
+                            'base_url': url if kind == 'ollama' else url + '/v1',
+                            'api_key_env': 'DEVPULSE_SMOKE_KEY',
+                            'context_window_tokens': 32768,
+                        }
+                    ]
+                }
+                env['DEVPULSE_SMOKE_KEY'] = 'fixture-smoke-api-credential'
+                (project / '.devpulse/config.json').write_text(json.dumps(config), encoding='utf-8')
+                task = json.loads(
+                    run(
+                        'run',
+                        'Fix retry bound to 3',
+                        '--new',
+                        '--allow-edits',
+                        '--allow-commands',
+                        '--json',
+                    )
+                )
+                assert 'verified' in task['message']
+                assert 'return attempts < 3' in (project / 'retry.py').read_text()
+                assert 'smoke-agent-private' in (project / 'retry.py').read_text()
+                resumed = json.loads(
+                    run('run', 'Summarize the change', '--session', task['session_id'], '--json')
+                )
+                assert resumed['session_id'] == task['session_id']
+                assert len(requests) == 5 and 'Fix retry bound to 3' in json.dumps(requests[-1])
+        assert b'smoke-agent-private' not in (home / 'state.db').read_bytes()
+    print(
+        'Installed wheel smoke passed: reviews, durable jobs/cancellation, gateway lifecycle, and Ollama/API coding tasks with real verification and resume.'
+    )
 
 
 if __name__ == '__main__':

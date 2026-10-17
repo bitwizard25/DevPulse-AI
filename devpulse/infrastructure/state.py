@@ -47,6 +47,7 @@ class State:
         db = sqlite3.connect(self.path, timeout=15)
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA secure_delete=ON')
+        db.execute('PRAGMA foreign_keys=ON')
         try:
             with db:
                 yield db
@@ -132,6 +133,20 @@ class State:
                 "DELETE FROM sessions WHERE status!='running' AND started<?",
                 (time.time() - days * 86400,),
             ).rowcount
+            cutoff = time.time() - days * 86400
+            agent_ids = [
+                row['id']
+                for row in db.execute('SELECT id FROM agent_sessions WHERE updated<?', (cutoff,))
+            ]
+            for session_id in agent_ids:
+                db.execute(
+                    'DELETE FROM agent_actions WHERE turn_id IN (SELECT id FROM agent_turns WHERE session_id=?)',
+                    (session_id,),
+                )
+                db.execute('DELETE FROM agent_turns WHERE session_id=?', (session_id,))
+                db.execute('DELETE FROM agent_messages WHERE session_id=?', (session_id,))
+                db.execute('DELETE FROM agent_sessions WHERE id=?', (session_id,))
+            count += len(agent_ids)
             db.execute('DELETE FROM cache WHERE expires<=?', (time.time(),))
             return count
 

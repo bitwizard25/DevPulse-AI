@@ -7,9 +7,14 @@ from .. import __version__
 
 def parser() -> argparse.ArgumentParser:
     app = argparse.ArgumentParser(
-        prog='devpulse', description='Local-first code review, project memory and gateway.'
+        prog='devpulse', description='Task-first local coding harness and code review gateway.'
     )
     app.add_argument('--version', action='version', version=__version__)
+    app.add_argument(
+        '--permissions',
+        choices=['ask', 'edit', 'auto'],
+        help='Session permissions: ask, allow edits, or allow edits and commands.',
+    )
     app.add_argument(
         '--project', default='.', help='Project directory (default: current directory).'
     )
@@ -25,6 +30,23 @@ def parser() -> argparse.ArgumentParser:
     )
     init.add_argument('--base-url')
     init.add_argument('--api-key-env', default='OPENAI_API_KEY')
+    run = commands.add_parser('run', help='Work on a task in the current project with the agent.')
+    run.add_argument('task', nargs='+', help='Task described in plain language.')
+    run.add_argument('--permissions', choices=['ask', 'edit', 'auto'], default=argparse.SUPPRESS)
+    run_session = run.add_mutually_exclusive_group()
+    run_session.add_argument('--session', help='Resume a session by ID.')
+    run_session.add_argument('--new', action='store_true', help='Start a fresh session.')
+    run.add_argument(
+        '--allow-edits',
+        action='store_true',
+        help='Allow project file writes without per-file approval.',
+    )
+    run.add_argument(
+        '--allow-commands',
+        action='store_true',
+        help='Allow model-requested commands without per-command approval.',
+    )
+    run.add_argument('--json', action='store_true', help='Emit the final response as JSON.')
     review = commands.add_parser(
         'review', help='Review staged diff by default; never edit target files.'
     )
@@ -170,7 +192,7 @@ def parser() -> argparse.ArgumentParser:
     rules.add_argument('action', choices=['sync'], default='sync', nargs='?')
     rules.add_argument('--json', action='store_true')
     commands.add_parser('setup', help='Run interactive guided setup wizard.')
-    commands.add_parser('tui', help='Open a small interactive terminal dashboard.')
+    commands.add_parser('tui', help='Open the task-first terminal session.')
     for sub in set(commands.choices.values()):
         sub.add_argument('--project', default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     return app

@@ -118,3 +118,53 @@ def complete(config: ProviderConfig, prompt: str) -> dict:
         return validate_result(json.loads(content))
     except (ValueError, RecursionError):
         raise ProviderError('Model did not return valid review JSON.') from None
+
+
+def complete_agent(config: ProviderConfig, messages: list[dict]) -> str:
+    """Return one task-harness decision as JSON text using the configured provider."""
+    config.validate()
+    if config.kind == 'ollama':
+        result = http_json(
+            config.base_url.rstrip('/') + '/api/chat',
+            payload={
+                'model': config.model,
+                'messages': messages,
+                'stream': False,
+                'format': 'json',
+                'options': {
+                    'temperature': 0,
+                    'num_predict': config.output_tokens,
+                    'num_ctx': config.context_window_tokens,
+                },
+            },
+            timeout=config.timeout,
+        )
+        content = (
+            result.get('message', {}).get('content')
+            if isinstance(result.get('message'), dict)
+            else None
+        )
+    else:
+        key = os.environ.get(config.api_key_env)
+        if not key:
+            raise ProviderError(
+                f'Set the environment variable {config.api_key_env} for this provider.'
+            )
+        result = http_json(
+            config.base_url.rstrip('/') + '/chat/completions',
+            payload={
+                'model': config.model,
+                'messages': messages,
+                'response_format': {'type': 'json_object'},
+                'max_completion_tokens': config.output_tokens,
+            },
+            headers={'Authorization': 'Bearer ' + key},
+            timeout=config.timeout,
+        )
+        try:
+            content = result['choices'][0]['message']['content']
+        except (KeyError, IndexError, TypeError):
+            content = None
+    if not isinstance(content, str):
+        raise ProviderError('Provider response has no text content.')
+    return content

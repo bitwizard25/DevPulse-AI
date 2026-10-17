@@ -1,6 +1,8 @@
 # Architecture
 
-DevPulse uses a single local gateway to coordinate review work and SQLite to persist operational state. Human-maintained Markdown holds durable project knowledge. This follows the broad ideas of a local control plane and explicit memory described in [OpenClaw gateway architecture](https://docs.openclaw.ai/concepts/architecture) and [memory documentation](https://docs.openclaw.ai/concepts/memory); it is an independent implementation, not an OpenClaw protocol clone.
+DevPulse uses a local gateway to coordinate review jobs and SQLite to persist operational state. Human-maintained Markdown holds durable project knowledge. This follows the broad ideas of a local control plane and explicit memory described in [OpenClaw gateway architecture](https://docs.openclaw.ai/concepts/architecture) and [memory documentation](https://docs.openclaw.ai/concepts/memory); it is an independent implementation, not an OpenClaw protocol clone.
+
+The task-first coding harness reuses the provider, context and SQLite adapters. Its terminal process owns the interactive model/tool loop so file and command approvals stay attached to the user's terminal. It stores redacted session turns in the shared SQLite state database and takes a process lock for one active agent turn. The gateway remains the owner of durable review jobs and provider circuits. A future gateway RPC can own interactive turns once it can stream approval requests back to the terminal; this MVP does not imply that the interactive tool loop is gateway-managed.
 
 ## Dependency direction
 
@@ -23,10 +25,10 @@ The domain imports no application, infrastructure or presentation modules. The a
 
 | Directory | Responsibility |
 | --- | --- |
-| `devpulse/domain/` | Typed jobs/snapshots, hardware entities and model rating formulas, MCP JSON-RPC schemas, pure configuration validation, secret masking, Python AST rules, model-result validation and output limits |
-| `devpulse/application/` | Review preparation/execution, durable worker, job use cases, MCP application service, context selection/budgets and provider routing; typed ports for adapters |
-| `devpulse/infrastructure/` | OS telemetry hardware probe and Ollama tags fetcher, agent integration adapters (Claude, Antigravity, Codex), SQLite queue/index/circuit adapters and migrations, locks, Git/Markdown/configuration access, conservative token counter and bounded HTTP transport |
-| `devpulse/interfaces/` | Argument parser, focused command handlers (`review`, `jobs`, `models`, `verify`, `mcp`, `integrate`), safe terminal rendering, terminal dashboard and authenticated loopback gateway |
+| `devpulse/domain/agent.py`, `agent_prompts.py` | Strict model decision contract and task harness prompt with repository-content trust boundaries |
+| `devpulse/application/` | Review and task orchestration, durable worker, job use cases, MCP service, context selection/budgets and provider routing; typed ports for adapters |
+| `devpulse/infrastructure/` | OS telemetry, agent integration adapters (Claude, Antigravity, Codex), bounded project tools, SQLite queue/index/circuit/session adapters and migrations, locks, Git/Markdown/configuration access and HTTP transport |
+| `devpulse/interfaces/` | Task-first terminal loop, focused command handlers (`review`, `jobs`, `models`, `verify`, `mcp`, `integrate`), safe terminal rendering and authenticated loopback gateway |
 | `devpulse/bootstrap.py` | Composition root that constructs the review engine with concrete adapters |
 | `tests/` | Behavior, integration and architecture boundary tests; no live account needed |
 
@@ -39,11 +41,21 @@ The domain imports no application, infrastructure or presentation modules. The a
 5. Untrusted model findings are validated, re-scrubbed, combined with deterministic findings and bounded.
 6. Redacted results enter the cache and session record. Presentation renders a safe report and maps severity to exit status.
 
+## Task session lifecycle
+
+1. `devpulse` in a TTY opens the task prompt; `devpulse run "..."` provides a one-turn interface. First-run setup selects a provider source and initializes project rules/memory.
+2. The harness loads redacted prior messages, prepares bounded project rules/memory/code context, and gives the model a strict JSON decision contract plus a small typed tool catalog.
+3. Tool calls are validated and routed through project-scoped adapters. Paths cannot escape the repository; secret and generated areas are excluded. Writes display a diff and commands display their argv; each requires terminal approval.
+4. Every model response, user turn, and tool result is scrubbed before local transcript storage. Context is bounded to the smallest configured provider input budget and old in-memory messages are dropped first.
+5. The user can resume the active project session, start a new one, clear the transcript, or inspect session IDs. The agent never claims verification succeeded unless a command or deterministic verifier returned success.
+
+The terminal harness is a single-agent runtime in this release. Session records live in the common SQLite database, while the foreground CLI owns interactive execution and approvals. Background tool jobs, subagents, and remote channels are deferred.
+
 Persisted snapshots contain redacted prompts and precomputed findings, with configuration names and opaque original-input identities. Raw code, credential values, provider error bodies and vault mappings are not intentionally persisted. Snapshot payloads expire after 24 hours; history/results are separate. Operational reviews are not silently promoted into project knowledge or injected as memory.
 
 ## Ownership, concurrency and failure
 
-State initialization is protected across processes. Version 3 migrations verify FTS5 and back up existing state before any schema change. Each operation uses a short transaction/connection. Job claims use `BEGIN IMMEDIATE`, ownership fencing, timestamps and FIFO insertion tie-breaking. Future schema versions fail closed. The gateway has an exclusive process lock and atomic discovery descriptor. Eight HTTP handlers allow only four blocking review waits; job controls retain capacity.
+State initialization is protected across processes. Version 4 migrations verify FTS5 and back up existing state before any schema change. Each operation uses a short transaction/connection. Job claims use `BEGIN IMMEDIATE`, ownership fencing, timestamps and FIFO insertion tie-breaking. Future schema versions fail closed. The gateway has an exclusive process lock and atomic discovery descriptor. Eight HTTP handlers allow only four blocking review waits; job controls retain capacity.
 
 Attempt sessions record process ownership for legacy/direct history. Durable jobs use a unique worker identity and five-second heartbeats. Only a new exclusive gateway owner performs restart recovery; its acquired process lock establishes that the prior gateway cannot still own the worker. Recovered jobs retain snapshot/expiry/attempt counts, and stale owners cannot complete them. Heartbeats provide active-attempt visibility rather than authorizing a second worker to steal a running HTTP request.
 

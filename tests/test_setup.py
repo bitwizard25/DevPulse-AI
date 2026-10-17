@@ -1,79 +1,59 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from devpulse.domain.hardware import HardwareProfile
+from devpulse.domain.hardware import HardwareProfile, ModelSpec
 from devpulse.infrastructure.project import initialize
-from devpulse.interfaces.setup import run_interactive_menu, run_setup_wizard
+from devpulse.interfaces.setup import run_setup_wizard
 
 
 class SetupTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory(prefix='devpulse-setup-test-')
-        self.root = Path(self.temp_dir.name)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
 
-    def tearDown(self):
-        self.temp_dir.cleanup()
+    def setup_with_choice(self, choice):
+        with (
+            patch('builtins.input', return_value=choice) as prompt,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(run_setup_wizard(self.root), 0)
+        self.assertEqual(prompt.call_count, 1)
+        return json.loads((self.root / '.devpulse/config.json').read_text('utf-8'))
 
-    @patch('devpulse.interfaces.setup.probe_hardware')
-    @patch('builtins.input')
-    def test_setup_wizard_offline_mode(self, mock_input, mock_probe):
-        mock_probe.return_value = HardwareProfile(
-            total_ram_bytes=8 * 1024**3,
-            available_ram_bytes=4 * 1024**3,
-            vram_bytes=4 * 1024**3,
-            gpu_name='NVIDIA GeForce RTX 2050',
-            os_name='Windows',
-        )
-        # Choose option 1 (offline), then Y (integrate)
-        mock_input.side_effect = ['1', 'y']
-
-        ret = run_setup_wizard(self.root)
-        self.assertEqual(ret, 0)
-        self.assertTrue((self.root / '.devpulse/config.json').is_file())
+    @patch('devpulse.interfaces.setup.installed_model_names', return_value=[])
+    def test_single_choice_offline_setup_creates_rules_without_integrations(self, _):
+        config = self.setup_with_choice('3')
+        self.assertEqual(config['providers'], [])
         self.assertTrue((self.root / '.devpulse/RULES.md').is_file())
-        self.assertTrue((self.root / '.agents/mcp_config.json').is_file())
+        self.assertFalse((self.root / '.agents/mcp_config.json').exists())
 
-    @patch('devpulse.interfaces.setup.probe_hardware')
-    @patch('builtins.input')
-    def test_setup_wizard_ollama_mode_picks_model(self, mock_input, mock_probe):
-        mock_probe.return_value = HardwareProfile(
-            total_ram_bytes=8 * 1024**3,
-            available_ram_bytes=4 * 1024**3,
-            vram_bytes=4 * 1024**3,
-            gpu_name='NVIDIA GeForce RTX 2050',
-            os_name='Windows',
-        )
-        # Choose option 2 (Ollama), choose model 1, then Y (integrate)
-        mock_input.side_effect = ['2', '1', 'y']
+    @patch('devpulse.interfaces.setup.installed_model_names', return_value=['qwen2.5-coder:1.5b'])
+    @patch(
+        'devpulse.interfaces.setup.fetch_models',
+        return_value=[ModelSpec('qwen2.5-coder:1.5b', 1.5)],
+    )
+    @patch(
+        'devpulse.interfaces.setup.probe_hardware',
+        return_value=HardwareProfile(
+            8 * 1024**3, 4 * 1024**3, 4 * 1024**3, 'Fixture GPU', 'Windows'
+        ),
+    )
+    def test_local_setup_uses_installed_model_without_another_menu(self, *_):
+        config = self.setup_with_choice('1')
+        self.assertEqual(config['providers'][0]['kind'], 'ollama')
+        self.assertEqual(config['providers'][0]['model'], 'qwen2.5-coder:1.5b')
 
-        ret = run_setup_wizard(self.root)
-        self.assertEqual(ret, 0)
-        cfg_data = json.loads((self.root / '.devpulse/config.json').read_text('utf-8'))
-        self.assertEqual(len(cfg_data['providers']), 1)
-        self.assertEqual(cfg_data['providers'][0]['kind'], 'ollama')
-
-    @patch('devpulse.interfaces.setup.probe_hardware')
-    @patch('builtins.input')
-    def test_interactive_menu_offline_option(self, mock_input, mock_probe):
-        mock_probe.return_value = HardwareProfile(
-            total_ram_bytes=8 * 1024**3,
-            available_ram_bytes=4 * 1024**3,
-            vram_bytes=4 * 1024**3,
-            gpu_name='NVIDIA GeForce RTX 2050',
-            os_name='Windows',
-        )
-        initialize(self.root, provider='offline', model='offline')
-        # Choice 2 (offline checks), target file = 'test.py', press enter to return, choice q
-        test_file = self.root / 'test.py'
-        test_file.write_text('print("hello world")\n', encoding='utf-8')
-        mock_input.side_effect = ['2', 'test.py', '', 'q']
-
-        ret = run_interactive_menu(self.root)
-        self.assertEqual(ret, 0)
-
-
-if __name__ == '__main__':
-    unittest.main()
+    @patch('devpulse.interfaces.setup.installed_model_names', return_value=[])
+    def test_cloud_setup_upgrades_offline_config_and_preserves_rules(self, _):
+        initialize(self.root, provider='offline')
+        rules = self.root / '.devpulse/RULES.md'
+        rules.write_text('Keep our project conventions.')
+        config = self.setup_with_choice('2')
+        self.assertEqual(config['providers'][0]['kind'], 'openai-compatible')
+        self.assertEqual(rules.read_text(), 'Keep our project conventions.')

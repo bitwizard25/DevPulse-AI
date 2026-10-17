@@ -7,14 +7,19 @@ from pathlib import Path
 
 
 def atomic_write(path: Path, content: str):
+    atomic_write_bytes(path, content.encode('utf-8'))
+
+
+def atomic_write_bytes(path: Path, content: bytes, *, mode: int = 0o600):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
     try:
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as handle:
+        with os.fdopen(fd, 'wb') as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        os.chmod(temporary, mode)
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)

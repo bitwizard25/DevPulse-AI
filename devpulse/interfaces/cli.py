@@ -7,12 +7,14 @@ from pathlib import Path
 
 from ..domain.errors import ProviderError
 from ..domain.privacy import Vault
+from . import agent as agent_command
 from .commands import gateway, integrate, jobs, mcp, models, project, review, state, verify
 from .output import terminal_safe
 from .parser import parser
 
 HANDLERS = {
     'init': project.init,
+    'run': agent_command.run,
     'review': review.handle,
     'gateway': gateway.handle,
     'memory': project.memory,
@@ -48,7 +50,7 @@ def print_welcome(root: Path):
         active_model = f'{p0.model} ({p0.name})'
 
     emit('==============================================================================')
-    emit(f'  DevPulse AI v{__version__} | Local Code Review, Gate & Agent Co-Processor')
+    emit(f'  DevPulse AI v{__version__} | Task-First Coding Harness & Review Gateway')
     emit('==============================================================================')
     emit(f'  Project:       {root}')
     emit(f'  Active Model:  {active_model}')
@@ -57,7 +59,8 @@ def print_welcome(root: Path):
     )
     emit('------------------------------------------------------------------------------')
     emit('  Quick Commands:')
-    emit('    devpulse                     Interactive setup and launcher menu')
+    emit('    devpulse                     Start or resume a task-first coding session')
+    emit('    devpulse run "<task>"         Run one task in the current repository')
     emit('    devpulse review              Run code review & security audit on staged changes')
     emit('    devpulse review --file <f>   Review a specific file in the repository')
     emit('    devpulse verify --file <f>   AST syntax & secret blocker gate (exit code 2)')
@@ -65,7 +68,7 @@ def print_welcome(root: Path):
     emit('    devpulse models <name> --select  Select and activate a local Ollama model')
     emit('    devpulse integrate --all     Bridge Claude Code, Google Antigravity & Codex')
     emit('    devpulse mcp                 Launch Model Context Protocol stdio server')
-    emit('    devpulse tui                 Open interactive terminal dashboard')
+    emit('    devpulse tui                 Open the interactive task session')
     emit('    devpulse --help              Show detailed command arguments')
     emit('==============================================================================')
 
@@ -79,16 +82,11 @@ def main(argv=None) -> int:
             raise ValueError('Project must be a directory.')
         if not args.command:
             if sys.stdin.isatty():
-                from .setup import run_interactive_menu
-
-                return run_interactive_menu(root)
+                return agent_command.run(args, root)
             print_welcome(root)
             return 0
         if args.command == 'tui':
-            from .tui import dashboard
-
-            dashboard(root)
-            return 0
+            return agent_command.run(args, root)
         return HANDLERS[args.command](args, root)
     except (KeyboardInterrupt, EOFError):
         print('Stopped.', file=sys.stderr)
