@@ -4,7 +4,7 @@ import json
 import time
 from typing import Callable, Protocol
 
-from ..domain.agent import AgentDecision
+from ..domain.agent import AgentDecision, ToolCall
 from ..domain.agent_prompts import AGENT_SYSTEM
 from ..domain.agent_tools import validate_arguments
 from ..domain.errors import ProviderError
@@ -163,24 +163,34 @@ class AgentSession:
             allowed_tools = {item.get('name') for item in tool_specs if isinstance(item, dict)}
             local_ids = set()
             guidance_required = False
+            validated_calls = []
             for call in decision.tool_calls:
                 if call.name not in allowed_tools:
                     raise ValueError('Agent requested a tool outside the available catalog.')
-                if call.id in seen_ids or call.id in local_ids:
-                    raise ValueError('Tool call IDs must be unique throughout a turn.')
+                if call.id in local_ids:
+                    raise ValueError('Tool call IDs must be unique within a decision.')
                 local_ids.add(call.id)
                 validate_arguments(call.name, call.arguments)
-            seen_ids.update(local_ids)
+                call_id = call.id
+                if call_id in seen_ids:
+                    suffix = 1
+                    while f'{call.id}_{suffix}' in seen_ids:
+                        suffix += 1
+                    call_id = f'{call.id}_{suffix}'
+                seen_ids.add(call_id)
+                validated_calls.append(ToolCall(call_id, call.name, call.arguments))
             safe_message = self.scrub(decision.message)
             safe_decision = json.dumps(
                 scrub_structure(json.loads(raw), self.scrub), ensure_ascii=True
             )
             self.messages.append({'role': 'assistant', 'content': safe_decision})
             self._persist('assistant', safe_decision)
-            self.on_event({'type': 'message', 'text': safe_message})
             if decision.final:
+                self.on_event({'type': 'message', 'text': safe_message})
                 return safe_message
-            for call in decision.tool_calls:
+            else:
+                self.on_event({'type': 'plan', 'text': safe_message})
+            for call in validated_calls:
                 safe_call_id = self.scrub(call.id)
                 safe_arguments = scrub_structure(call.arguments, self.scrub)
                 self.on_event(
