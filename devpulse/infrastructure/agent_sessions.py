@@ -1,5 +1,6 @@
 """SQLite-backed conversation metadata and bounded, already-redacted turns."""
 
+import builtins
 import json
 import time
 import uuid
@@ -42,7 +43,7 @@ class SQLiteAgentSessions:
             ).fetchone()
         return dict(row) if row else None
 
-    def list(self, project: str, limit: int = 20) -> list[dict]:
+    def list(self, project: str, limit: int = 20) -> builtins.list[dict]:
         if not 1 <= limit <= 200:
             raise ValueError('Session limit must be between 1 and 200.')
         with self.state.connect() as db:
@@ -54,7 +55,7 @@ class SQLiteAgentSessions:
                 )
             ]
 
-    def messages(self, session_id: str) -> list[dict]:
+    def messages(self, session_id: str) -> builtins.list[dict]:
         self.get(session_id)
         with self.state.connect() as db:
             return [

@@ -1,5 +1,6 @@
 """Atomic SQLite queue with fenced ownership and expiring replay snapshots."""
 
+import builtins
 import json
 import uuid
 
@@ -77,7 +78,7 @@ class SQLiteJobStore:
             raise ValueError('Unknown job ID.')
         return self._job(row)
 
-    def list(self, project: str | None = None, limit: int = 20) -> list[Job]:
+    def list(self, project: str | None = None, limit: int = 20) -> builtins.list[Job]:
         if not 1 <= limit <= 200:
             raise ValueError('Job limit must be between 1 and 200.')
         self.expire()

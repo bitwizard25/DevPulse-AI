@@ -130,3 +130,11 @@ class AgentStateTests(unittest.TestCase):
         with self.state.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM agent_turns').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM agent_actions').fetchone()[0], 0)
+
+    def test_session_annotations_are_valid(self):
+        import inspect
+        ann_messages = inspect.get_annotations(SQLiteAgentSessions.messages)
+        self.assertIn('return', ann_messages)
+        ann_list = inspect.get_annotations(SQLiteAgentSessions.list)
+        self.assertIn('return', ann_list)
+
