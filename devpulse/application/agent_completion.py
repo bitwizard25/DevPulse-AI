@@ -20,11 +20,19 @@ class CompletionGate:
                 and type(self.result.get('exit_code')) is int
             ):
                 code = self.result['exit_code']
-                if code == 0 and not has_test_summary(self.result.get('output', '')):
+                if not has_test_summary(self.result.get('output', '')):
+                    if code:
+                        return (
+                            f'\nThe last test command exited {code} before producing a test '
+                            'execution summary, so it did not establish whether tests pass. '
+                            'Check existing paths with list_files and run from the project root. '
+                            'For Python unittest files named test_*.py, use '
+                            '`python -m unittest discover -v`. Do not use verify_file as a test runner.'
+                        )
                     return (
                         '\nThe last command exited 0 but produced no test execution summary. '
                         'Use the project test runner; importing test definitions does not run them. '
-                        'For unittest, use python -m unittest discover and inspect the test count.'
+                        'For unittest, use python -m unittest discover -v and inspect the test count.'
                     )
                 return (
                     f'\nA test runner result is observed; latest exit code: {code}. '
@@ -59,9 +67,7 @@ class CompletionGate:
             if (
                 self.result.get('status') == 'completed'
                 and type(self.result.get('exit_code')) is int
-                and (
-                    self.result['exit_code'] != 0 or has_test_summary(self.result.get('output', ''))
-                )
+                and has_test_summary(self.result.get('output', ''))
             ):
                 return None
         if self.repairs >= MAX_COMPLETION_REPAIRS:
@@ -71,7 +77,7 @@ class CompletionGate:
         self.repairs += 1
         return {
             'status': 'incomplete',
-            'reason': 'Requested tests were not executed. Use run_command with the project test runner, inspect its output and exit code, then report the actual result. Do not substitute syntax checks or another plan.',
+            'reason': 'Requested tests were not executed. The previous command produced no test execution summary. Inspect existing paths, run the correct project test runner from the project root, then report its output and exit code. For Python unittest files named test_*.py, use python -m unittest discover -v. Do not use verify_file as a test runner or repeat a missing path.',
         }
 
     def render(self, message):
@@ -87,7 +93,13 @@ class CompletionGate:
         if self.result.get('timed_out'):
             return 'The test command timed out; test verification is incomplete.'
         code = self.result['exit_code']
-        if code == 0 and not has_test_summary(self.result.get('output', '')):
+        if not has_test_summary(self.result.get('output', '')):
+            if code:
+                return (
+                    f'The test command failed before producing a test execution summary '
+                    f'(exit code {code}); test results are unverified.\n'
+                    + self.result.get('output', '')[:4000]
+                )
             return 'The command exited 0, but no test execution summary was observed. Test results are unverified.'
         if code:
             return (

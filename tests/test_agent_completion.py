@@ -86,6 +86,41 @@ class AgentCompletionTests(unittest.TestCase):
         self.assertIn('exit code: 1', answer)
         self.assertNotIn('All tests passed.', answer)
 
+    def test_missing_test_file_does_not_count_as_an_executed_test_run(self):
+        tools = Tools()
+        missing_file = {
+            'status': 'completed',
+            'exit_code': 2,
+            'output': "python: can't open file 'test_runner.py': [Errno 2] No such file",
+        }
+        test_summary = {'status': 'completed', 'exit_code': 0, 'output': 'Ran 1 test\nOK'}
+
+        def execute(name, arguments):
+            tools.calls.append((name, arguments))
+            return missing_file if len(tools.calls) == 1 else test_summary
+
+        tools.execute = execute
+        requests = []
+
+        def model(messages):
+            requests.append(json.dumps(messages))
+            if len(requests) == 1:
+                return reply('Run the tests.', 'run_command', {'argv': ['python', 'test_runner.py']})
+            if len(requests) == 2:
+                return reply(
+                    'Run discovered tests.',
+                    'run_command',
+                    {'argv': ['python', '-m', 'unittest', 'discover', '-v']},
+                )
+            return reply('All 1 test passed.')
+
+        session = AgentSession(model, tools, Vault().scrub)
+        answer = session.run('Check all tests pass and report the actual result.', 'sample')
+
+        self.assertEqual(len(tools.calls), 2)
+        self.assertIn('did not establish whether tests pass', requests[1])
+        self.assertIn('1 test passed', answer)
+
     def test_denied_test_command_is_not_retried_by_the_completion_guard(self):
         tools = Tools({'status': 'denied'})
         responses = iter(

@@ -9,6 +9,7 @@ def has_test_summary(output: str) -> bool:
     return bool(
         re.search(
             r'\bRan [1-9]\d* tests?\b|\b[1-9]\d* (?:passed|failed)\b'
+            r'|\bFAILED \((?:failures|errors)=[1-9]\d*'
             r'|^# tests [1-9]\d*\b|^ok[ \t]+\S+'
             r'|\bPassed:\s*[1-9]\d*\b|out of [1-9]\d*',
             output,
