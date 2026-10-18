@@ -101,14 +101,36 @@ class AgentCompletionTests(unittest.TestCase):
 
     def test_test_failure_is_reported_even_when_user_only_requested_a_code_fix(self):
         tools = Tools({'status': 'completed', 'exit_code': 1, 'output': 'FAILED (failures=1)'})
-        responses = iter([
-            reply('Verify change.', 'run_command', {'argv': ['python', '-m', 'unittest']}),
-            reply('Fixed; all tests passed.'),
-        ])
+        responses = iter(
+            [
+                reply('Verify change.', 'run_command', {'argv': ['python', '-m', 'unittest']}),
+                reply('Fixed; all tests passed.'),
+            ]
+        )
         session = AgentSession(lambda _: next(responses), tools, Vault().scrub)
         answer = session.run('Fix the retry condition.', 'sample')
         self.assertIn('exit code: 1', answer)
         self.assertNotIn('all tests passed', answer)
+
+    def test_empty_or_zero_test_output_cannot_be_reported_as_passing(self):
+        for output in ('', 'Ran 0 tests\nOK'):
+            with self.subTest(output=output):
+                tools = Tools({'status': 'completed', 'exit_code': 0, 'output': output})
+                responses = iter(
+                    [
+                        reply(
+                            'Run test file.', 'run_command', {'argv': ['python', 'test_math.py']}
+                        ),
+                        reply('All tests passed.'),
+                        reply('All tests passed.'),
+                        reply('All tests passed.'),
+                    ]
+                )
+                session = AgentSession(
+                    lambda _, responses=responses: next(responses), tools, Vault().scrub
+                )
+                with self.assertRaisesRegex(ValueError, 'tests.*not.*executed'):
+                    session.run('Run all tests.', 'sample')
 
     def test_empty_literal_file_filter_provides_real_paths_and_recovery_hint(self):
         with tempfile.TemporaryDirectory() as directory:

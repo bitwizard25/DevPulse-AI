@@ -4,6 +4,19 @@ import re
 from pathlib import PurePosixPath
 
 
+def has_test_summary(output: str) -> bool:
+    """Require visible test execution, rather than a successful import or syntax check."""
+    return bool(
+        re.search(
+            r'\bRan [1-9]\d* tests?\b|\b[1-9]\d* (?:passed|failed)\b'
+            r'|^# tests [1-9]\d*\b|^ok[ \t]+\S+'
+            r'|\bPassed:\s*[1-9]\d*\b|out of [1-9]\d*',
+            output,
+            re.MULTILINE,
+        )
+    )
+
+
 def is_test_command(argv) -> bool:
     if not isinstance(argv, list) or not argv or not all(isinstance(part, str) for part in argv):
         return False

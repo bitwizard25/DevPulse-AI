@@ -1,9 +1,7 @@
 """Completion evidence for explicit user requests to execute tests."""
 
-import re
-
 from ..domain.agent_intent import requests_test_execution
-from ..domain.test_commands import is_test_command
+from ..domain.test_commands import has_test_summary, is_test_command
 
 MAX_COMPLETION_REPAIRS = 2
 
@@ -22,8 +20,14 @@ class CompletionGate:
                 and type(self.result.get('exit_code')) is int
             ):
                 code = self.result['exit_code']
+                if code == 0 and not has_test_summary(self.result.get('output', '')):
+                    return (
+                        '\nThe last command exited 0 but produced no test execution summary. '
+                        'Use the project test runner; importing test definitions does not run them. '
+                        'For unittest, use python -m unittest discover and inspect the test count.'
+                    )
                 return (
-                    f'\nRequested test execution is observed; latest exit code: {code}. '
+                    f'\nA test runner result is observed; latest exit code: {code}. '
                     'Complete any remaining user work and report the actual result. '
                     'Do not restart discovery or repeat unchanged completed checks.'
                 )
@@ -34,7 +38,8 @@ class CompletionGate:
                 )
         return (
             '\nRequested tests must run with run_command before finishing. verify_file checks syntax only.'
-            if self.tests_requested else ''
+            if self.tests_requested
+            else ''
         )
 
     def observe(self, name, arguments, result):
@@ -54,8 +59,8 @@ class CompletionGate:
             if (
                 self.result.get('status') == 'completed'
                 and type(self.result.get('exit_code')) is int
-                and not re.search(
-                    r'Ran 0 tests?\b|no tests ran', self.result.get('output', ''), re.I
+                and (
+                    self.result['exit_code'] != 0 or has_test_summary(self.result.get('output', ''))
                 )
             ):
                 return None
@@ -72,11 +77,18 @@ class CompletionGate:
     def render(self, message):
         if self.result is None:
             return message
-        if self.result.get('status') != 'completed' or type(self.result.get('exit_code')) is not int:
-            return 'Test verification was not completed: ' + self.result.get('error', self.result.get('status', 'no command result'))
+        if (
+            self.result.get('status') != 'completed'
+            or type(self.result.get('exit_code')) is not int
+        ):
+            return 'Test verification was not completed: ' + self.result.get(
+                'error', self.result.get('status', 'no command result')
+            )
         if self.result.get('timed_out'):
             return 'The test command timed out; test verification is incomplete.'
         code = self.result['exit_code']
+        if code == 0 and not has_test_summary(self.result.get('output', '')):
+            return 'The command exited 0, but no test execution summary was observed. Test results are unverified.'
         if code:
             return (
                 f'The requested test command failed. Test command exit code: {code}.\n'

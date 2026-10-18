@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import threading
 import time
@@ -153,7 +154,7 @@ def main():
         home = root / 'state'
         env = {**os.environ, 'DEVPULSE_HOME': str(home), 'PYTHONUTF8': '1'}
         env.pop('PYTHONPATH', None)
-        executable = Path(sys.executable).parent / (
+        executable = Path(sysconfig.get_path('scripts')) / (
             'devpulse.exe' if os.name == 'nt' else 'devpulse'
         )
 
