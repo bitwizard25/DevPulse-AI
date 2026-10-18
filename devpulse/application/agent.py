@@ -5,9 +5,11 @@ import time
 from typing import Callable, Protocol
 
 from ..domain.agent import AgentDecision, ToolCall
+from ..domain.agent_intent import is_read_only_project_review, requests_project_review
 from ..domain.agent_prompts import AGENT_SYSTEM
 from ..domain.agent_tools import validate_arguments
 from ..domain.errors import ProviderError
+from .agent_completion import CompletionGate
 from .agent_context import AgentContext, bounded_result, scrub_history, scrub_structure
 
 MAX_TURNS = 12
@@ -172,11 +174,18 @@ class AgentSession:
             return answer
 
     def _run(self, task, project_name, guidance, references):
+        completion = CompletionGate(task)
         history = self.messages[1:]
         task, guidance = self.scrub(task), self.scrub(guidance)
         self.messages.append({'role': 'user', 'content': task})
         self._persist('user', task)
         tool_specs = self.tools.describe()
+        project_review_intent = requests_project_review(task) and any(
+            item.get('name') == 'review_project' for item in tool_specs
+        )
+        project_review = project_review_intent and is_read_only_project_review(task)
+        if not project_review_intent:
+            tool_specs = [item for item in tool_specs if item.get('name') != 'review_project']
         context = AgentContext(self.context_budget_bytes)
         observations = []
         scoped = {}
@@ -188,18 +197,44 @@ class AgentSession:
             active_guidance = guidance + ''.join(
                 f'\n--- {path} ---\n{text}' for path, text in scoped.items()
             )
-            request_messages, metadata = context.build(
-                task,
-                project_name,
-                active_guidance,
-                tool_specs,
-                scrub_history(history, self.scrub),
-                observations,
-                scrub_structure(references, self.scrub),
-            )
+            active_guidance += completion.guidance
+            if project_review_intent and not project_review:
+                active_guidance += (
+                    '\nUse review_project before manual reads for the requested repository audit.'
+                )
+            if project_review and turn == 0:
+                request_messages = None
+                metadata = {'type': 'context', 'omitted_messages': 0}
+            else:
+                request_messages, metadata = context.build(
+                    task,
+                    project_name,
+                    active_guidance,
+                    tool_specs,
+                    scrub_history(history, self.scrub),
+                    observations,
+                    scrub_structure(references, self.scrub),
+                )
             self.on_event(metadata)
-            raw = self.model(request_messages)
-            decision = AgentDecision.parse(raw)
+            if project_review and turn == 0:
+                decision = AgentDecision(
+                    'Running a read-only review of the whole project.',
+                    (ToolCall('project-review', 'review_project', {}),),
+                    False,
+                )
+                raw = json.dumps(
+                    {
+                        'message': decision.message,
+                        'tool_calls': [
+                            {'id': call.id, 'name': call.name, 'arguments': call.arguments}
+                            for call in decision.tool_calls
+                        ],
+                        'final': False,
+                    }
+                )
+            else:
+                raw = self.model(request_messages)
+                decision = AgentDecision.parse(raw)
             allowed_tools = {item.get('name') for item in tool_specs if isinstance(item, dict)}
             local_ids = set()
             guidance_required = False
@@ -222,12 +257,22 @@ class AgentSession:
             safe_message = self.scrub(decision.message)
             decision_value = scrub_structure(json.loads(raw), self.scrub)
             if decision.discarded_tool_calls:
-                safe_message += (
-                    '\n\nDevPulse ignored a tool request paired with this final answer.'
-                )
+                safe_message += '\n\nDevPulse ignored a tool request paired with this final answer.'
                 decision_value['message'] = safe_message
                 decision_value['tool_calls'] = []
             safe_decision = json.dumps(decision_value, ensure_ascii=True)
+            if decision.final:
+                feedback = completion.check()
+                if feedback:
+                    observations.append(
+                        {'id': f'completion-{turn}', 'name': 'completion_check', 'result': feedback}
+                    )
+                    self._persist('tool', 'Completion check: ' + json.dumps(feedback))
+                    self.on_event({'type': 'completion_blocked', 'reason': feedback['reason']})
+                    continue
+                safe_message = completion.render(safe_message)
+                decision_value['message'] = safe_message
+                safe_decision = json.dumps(decision_value, ensure_ascii=True)
             self.messages.append({'role': 'assistant', 'content': safe_decision})
             self._persist('assistant', safe_decision)
             if decision.final:
@@ -254,6 +299,7 @@ class AgentSession:
                 except Exception as exc:
                     result = {'error': self.scrub(str(exc))[:2000]}
                 safe_result = scrub_structure(result, self.scrub)
+                completion.observe(call.name, call.arguments, safe_result)
                 for item in safe_result.get('instructions', []):
                     scoped[item['path']] = item['text']
                 guidance_required = (
@@ -269,6 +315,41 @@ class AgentSession:
                 )
                 self._persist('tool', f'Tool result {safe_call_id}: {rendered}')
                 self.on_event({'type': 'tool_end', 'name': call.name, 'result': rendered})
+                if project_review and call.name == 'review_project':
+                    if 'error' in safe_result:
+                        raise ValueError('Project review failed: ' + safe_result['error'])
+                    answer = self._format_project_review(safe_result)
+                    final = json.dumps(
+                        {'message': answer, 'tool_calls': [], 'final': True}, ensure_ascii=True
+                    )
+                    self.messages.append({'role': 'assistant', 'content': final})
+                    self._persist('assistant', final)
+                    self.on_event({'type': 'message', 'text': answer})
+                    return answer
                 if guidance_required:
                     break
         raise ValueError(f'Agent reached its {MAX_TURNS}-turn limit; ask it to continue.')
+
+    @staticmethod
+    def _format_project_review(result):
+        lines = [result.get('summary') or 'Project review completed.']
+        findings = result.get('findings', [])
+        if not findings:
+            lines.append('No actionable findings.')
+        else:
+            for item in findings:
+                location = item.get('path') or 'project'
+                if item.get('line'):
+                    location += f':{item["line"]}'
+                severity = str(item.get('severity', 'info')).upper()
+                lines.append(f'- [{severity}] {location}: {item.get("message", "Review finding.")}')
+        omitted = result.get('omitted_findings', 0)
+        if omitted:
+            lines.append(f'{omitted} additional findings omitted from the task response.')
+        coverage = result.get('source', {})
+        omitted_files = coverage.get('files_omitted_from_prompt', 0)
+        if omitted_files:
+            lines.append(
+                f'Coverage warning: {omitted_files} project file(s) were excluded from the AI prompt by size limits.'
+            )
+        return '\n'.join(lines)

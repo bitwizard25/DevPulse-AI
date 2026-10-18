@@ -24,7 +24,7 @@ devpulse
 devpulse run "Find why login retries never stop and fix it" --allow-edits --allow-commands --json
 ```
 
-The task harness supports Ollama, OpenAI, Anthropic and Google Gemini. First launch asks whether to use a local model, an online API (then asks which provider), or offline checks. New OpenAI setups default to `gpt-6-luna-fast`. Each project has an active resumable local session. `devpulse` resumes it on the next launch; `/new` starts another, `/clear` deletes the current transcript, `/status` shows its ID and model, and `/quit` exits. Use `devpulse run --session SESSION_ID "..."` to resume a specific session. Conversation text is secret-scrubbed and stored in the local SQLite state database. Non-interactive runs deny writes and commands unless `--allow-edits` and `--allow-commands` are explicitly provided.
+The task harness supports Ollama, OpenAI, Anthropic and Google Gemini. First launch asks whether to use a local model, an online API (then asks which provider), or offline checks. New OpenAI setups default to `gpt-6-luna-fast`. Each project has an active resumable local session. `devpulse` resumes it on the next launch; `/new` starts another, `/clear` deletes the current transcript, `/status` shows its ID and model, and `/quit` exits. Use `devpulse run --session SESSION_ID "..."` to resume a specific session. Conversation text is secret-scrubbed and stored in the local SQLite state database. Non-interactive runs deny writes and commands unless `--allow-edits` and `--allow-commands` are explicitly provided. When asked to review or audit the repository, the task agent can call the existing read-only whole-project review engine and summarize its findings.
 
 ## First review without a model
 
@@ -58,7 +58,9 @@ If a model request fails, run `devpulse doctor`. It probes Ollama's model list w
 
 ## Online providers and failover
 
-The setup wizard offers OpenAI, Anthropic and Google Gemini. It configures native APIs for each service and stores only the environment variable name in project config. Set the key in your shell before running DevPulse:
+The setup wizard offers OpenAI, Anthropic and Google Gemini. Run `devpulse setup`, choose a provider, and enter its API key at the hidden prompt. On Windows, DevPulse saves it in your user environment and uses it immediately. Later launches read that saved key even from a terminal opened before setup. Project configuration stores only the environment variable name. On other platforms, entered keys last for the current DevPulse process; shell-managed environment variables remain supported.
+
+For scripted configuration, set the provider's key in the environment and use:
 
 ```sh
 devpulse init --provider openai-compatible
@@ -66,7 +68,7 @@ devpulse init --provider anthropic
 devpulse init --provider google
 ```
 
-The default model IDs are `gpt-6-luna-fast`, `claude-sonnet-5`, and `gemini-3.8-flash`. Override them with `--model`. Their default key variables are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_API_KEY`. For example, in PowerShell set `$env:OPENAI_API_KEY = "your-key"` for the current terminal session. `devpulse setup` opens the provider picker again and updates the active provider while keeping project rules and memory.
+The default model IDs are `gpt-6-luna-fast`, `claude-sonnet-5`, and `gemini-3.8-flash`. Override them with `--model`. Their default key variables are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_API_KEY`. Existing environment keys take precedence over saved Windows keys. If an interactive project session has a cloud provider but no key, DevPulse requests it before opening the chat. `devpulse setup` opens the provider picker again and updates the active provider while keeping project rules and memory.
 
 For failover, edit `.devpulse/config.json`:
 
@@ -120,6 +122,10 @@ devpulse prune --days 30
 - `~/.devpulse/identity.key`: local HMAC key for project and cache identities; keep it with state backups.
 
 Commit rules, memory and skills. Keep local config, state and credentials out of Git. Project memory is never automatically learned from source or old model responses. Curate it directly as it grows. FTS5 is required; startup reports an actionable error if the Python SQLite build lacks it.
+
+Before creating a derived index, DevPulse checks whether the selected folder contains programming files, Markdown documentation or project manifests. Git coding projects are indexed automatically. Coding folders outside Git require approval in the interactive terminal; the choice is remembered per folder. Scripted commands skip indexing until explicitly approved with `devpulse memory reindex --approve-non-git`. Folders containing only ordinary files report `Not a coding repository` and create no derived content index. Generated DevPulse instructions, dependency directories and Git-ignored source do not establish that a folder is a coding project. Direct task/file operations can still work without a retrieval index.
+
+Ollama task sessions request a JSON schema for agent decisions and tool arguments, in addition to runtime validation. This constrains response structure; it does not prove that the model selected the correct action or completed the requested task. See `evaluations/README.md` for real-task checks.
 
 The index refreshes changed/deleted memory and Git-tracked plus non-ignored untracked text files before task runs and reviews. Credential files, binaries, ignored files, generated directories and escaping paths are excluded. Indexing is bounded to 5000 paths, 20 MB total and 128 KB per document. Only redacted chunks with file/line provenance are indexed. Retrieval is local FTS5 lexical search, with up to eight memory/skill chunks and eight code chunks; it does not build a complete call graph or semantic embeddings. `memory reindex` rebuilds the derived index without editing Markdown.
 

@@ -17,8 +17,13 @@ def spec(name, description, properties, required=()):
 TEXT = {'type': 'string'}
 PATH = {'type': 'string', 'description': 'Project-relative path'}
 FINGERPRINT = {'type': 'string', 'description': 'Fingerprint from the latest read_file'}
+REVIEW_PROJECT_TOOL = spec(
+    'review_project',
+    'Read-only AI review across the project; returns findings with locations.',
+    {},
+)
 TOOL_SPECS = [
-    spec('list_files', 'Discover project files, respecting Git ignores.', {'query': TEXT}),
+    spec('list_files', 'List paths by literal substring; omit for all.', {'query': TEXT}),
     spec(
         'read_file',
         'Read source lines. Check truncated and use further ranges as needed.',
@@ -70,7 +75,8 @@ TOOL_SPECS = [
 
 
 def validate_arguments(name: str, arguments: dict):
-    definition = next((item['inputSchema'] for item in TOOL_SPECS if item['name'] == name), None)
+    definitions = [*TOOL_SPECS, REVIEW_PROJECT_TOOL]
+    definition = next((item['inputSchema'] for item in definitions if item['name'] == name), None)
     if definition is None:
         raise ValueError('Unknown tool.')
     if not isinstance(arguments, dict):

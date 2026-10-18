@@ -23,6 +23,7 @@ class ReviewTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.project = self.root / 'project'
         self.project.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.project)], check=True)
         self.state = State(self.root / 'state')
 
     def test_offline_checks_syntax_and_never_persists_source(self):

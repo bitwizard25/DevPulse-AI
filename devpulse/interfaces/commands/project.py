@@ -1,6 +1,7 @@
 """Project onboarding and explicit memory commands."""
 
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from ...infrastructure.config import load_config, protected_vault, state_home
 from ...infrastructure.memory import SQLiteMemoryIndex
 from ...infrastructure.project import add_memory, initialize, read_memory
 from ...infrastructure.state import State
+from ..indexing import ensure_index_access
 from ..output import emit
 
 
@@ -35,6 +37,12 @@ def memory(args, root: Path) -> int:
     vault = protected_vault(load_config(root))
     if args.action in ('search', 'reindex'):
         state = State(state_home())
+        ensure_index_access(
+            root,
+            state,
+            interactive=sys.stdin.isatty() and not args.json,
+            approve_non_git=getattr(args, 'approve_non_git', False),
+        )
         index = SQLiteMemoryIndex(state)
         report = (
             index.rebuild(root, vault) if args.action == 'reindex' else index.refresh(root, vault)
@@ -44,12 +52,16 @@ def memory(args, root: Path) -> int:
         else:
             if not args.text:
                 raise ValueError('Supply a memory search query.')
-            results = [
-                asdict(chunk)
-                for chunk in index.search(
-                    state.identity(str(root)), args.text, kind='memory', limit=args.limit
-                )
-            ]
+            results = (
+                [
+                    asdict(chunk)
+                    for chunk in index.search(
+                        state.identity(str(root)), args.text, kind='memory', limit=args.limit
+                    )
+                ]
+                if report.status == 'indexed'
+                else []
+            )
             if args.json:
                 emit(results, True)
             else:
@@ -67,6 +79,7 @@ def memory(args, root: Path) -> int:
 
 def context(args, root: Path) -> int:
     state = State(state_home())
+    ensure_index_access(root, state, interactive=sys.stdin.isatty() and not args.json)
     engine = make_engine(state)
     config = load_config(root)
     if args.file or args.worktree:

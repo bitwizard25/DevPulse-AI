@@ -148,6 +148,8 @@ def main():
         root = Path(directory)
         project = root / 'project'
         project.mkdir()
+        subprocess.run(['git', 'init', '-q', str(project)], check=True)
+        (project / 'README.md').write_text('# Smoke coding project\n', encoding='utf-8')
         home = root / 'state'
         env = {**os.environ, 'DEVPULSE_HOME': str(home), 'PYTHONUTF8': '1'}
         env.pop('PYTHONPATH', None)

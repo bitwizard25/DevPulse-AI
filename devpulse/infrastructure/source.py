@@ -78,7 +78,9 @@ def collect_all_project_files(root: Path) -> dict:
 
     candidate_paths = []
     try:
-        raw_list = git(root, 'ls-files', '-z').split(b'\0')
+        raw_list = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z').split(
+            b'\0'
+        )
         for raw in raw_list:
             if not raw:
                 continue
@@ -112,8 +114,10 @@ def collect_all_project_files(root: Path) -> dict:
     candidate_paths.sort(key=file_priority)
 
     files = []
+    prompt_files = 0
+    omitted_from_prompt = 0
     text_parts = [
-        f'Project review: {root.name} (full codebase scan - {len(candidate_paths)} file(s))'
+        f'Project review: {root.name} (project scan - {len(candidate_paths)} candidate file(s))'
     ]
     total_size = len(text_parts[0].encode('utf-8'))
 
@@ -125,6 +129,9 @@ def collect_all_project_files(root: Path) -> dict:
             if total_size + content_bytes <= MAX_SOURCE:
                 text_parts.append(f'--- {rel_name} ---\n{content}')
                 total_size += content_bytes
+                prompt_files += 1
+            else:
+                omitted_from_prompt += 1
             if len(files) >= 150:
                 break
         except Exception:
@@ -137,6 +144,9 @@ def collect_all_project_files(root: Path) -> dict:
         'kind': 'project',
         'text': '\n'.join(text_parts),
         'files': files,
+        'files_in_prompt': prompt_files,
+        'files_omitted_from_prompt': omitted_from_prompt
+        + max(0, len(candidate_paths) - len(files)),
     }
 
 

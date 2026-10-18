@@ -1,11 +1,13 @@
 """Review command: select execution mode and render the application result."""
 
+import sys
 from pathlib import Path
 
 from ...bootstrap import make_engine
 from ...infrastructure.config import load_config, state_home
 from ...infrastructure.state import State
 from ..gateway import ensure_gateway, gateway_request
+from ..indexing import ensure_index_access
 from ..output import emit, render_review, review_exit
 from .jobs import wait_for_result
 
@@ -15,6 +17,7 @@ def handle(args, root: Path) -> int:
         raise ValueError(
             '--detach requires a gateway-managed AI review; remove --offline and --direct.'
         )
+    ensure_index_access(root, State(state_home()), interactive=sys.stdin.isatty() and not args.json)
     target_file = args.file or getattr(args, 'file_pos', None)
     if getattr(args, 'all', False) or target_file in ('all', '.', '*', 'entire', 'project'):
         target_file = 'all'

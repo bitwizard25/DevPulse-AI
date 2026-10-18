@@ -1,6 +1,6 @@
 """Dispatch validated coding tools to focused filesystem and process adapters."""
 
-from ..domain.agent_tools import TOOL_SPECS, validate_arguments
+from ..domain.agent_tools import REVIEW_PROJECT_TOOL, TOOL_SPECS, validate_arguments
 from ..domain.checks import check_python, finding
 from .agent_commands import AgentCommands
 from .agent_files import AgentFiles
@@ -9,9 +9,10 @@ from .context import relative_to_root
 
 
 class ProjectTools:
-    def __init__(self, root, approve, vault):
+    def __init__(self, root, approve, vault, reviewer=None):
         self.workspace = AgentWorkspace(root)
         self.vault = vault
+        self.reviewer = reviewer
         self.files = AgentFiles(self.workspace, approve, vault)
         self.commands = AgentCommands(self.workspace.root, approve, vault)
 
@@ -23,13 +24,15 @@ class ProjectTools:
     def approve(self, value):
         self.files.approve = self.commands.approve = value
 
-    @staticmethod
-    def describe():
+    def describe(self):
+        if self.reviewer is not None:
+            return [REVIEW_PROJECT_TOOL, *TOOL_SPECS]
         return TOOL_SPECS
 
     def execute(self, name, arguments):
         validate_arguments(name, arguments)
         handlers = {
+            'review_project': self.review_project,
             'list_files': self.list_files,
             'search_text': self.search_text,
             'read_file': self.files.read_file,
@@ -40,18 +43,43 @@ class ProjectTools:
         }
         return handlers[name](arguments)
 
+    def review_project(self, args):
+        if args or self.reviewer is None:
+            raise ValueError('Project review is unavailable in this task session.')
+        result = self.reviewer()
+        findings = result.get('findings', [])
+        return {
+            'status': 'completed',
+            'summary': result.get('summary', ''),
+            'findings': findings[:40],
+            'omitted_findings': max(0, len(findings) - 40),
+            'provider': result.get('provider'),
+            'model': result.get('model'),
+            'mode': result.get('mode'),
+            'source': result.get('source', {}),
+        }
+
     def set_guidance(self, items):
         self.files.set_guidance(items)
 
     def list_files(self, args):
-        query = args.get('query', '').casefold()
+        query = args.get('query', '').strip().casefold()
         paths = []
+        samples = []
         for relative, _ in self.workspace.files():
+            if len(samples) < 8:
+                samples.append(relative.as_posix())
             if query in relative.as_posix().casefold():
                 paths.append(relative.as_posix())
                 if len(paths) >= 300:
                     break
-        return {'paths': paths, 'truncated': len(paths) >= 300}
+        result = {'paths': paths, 'truncated': len(paths) >= 300}
+        if query and not paths:
+            result.update(
+                hint='query is a literal path substring, not a request. Use list_files({}) for all paths or a shorter substring such as test.',
+                sample_paths=samples,
+            )
+        return result
 
     def search_text(self, args):
         query = args['query']

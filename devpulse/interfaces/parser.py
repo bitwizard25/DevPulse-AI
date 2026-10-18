@@ -95,6 +95,11 @@ def parser() -> argparse.ArgumentParser:
     memory.add_argument('text', nargs='?')
     memory.add_argument('--json', action='store_true')
     memory.add_argument('--limit', type=int, default=8)
+    memory.add_argument(
+        '--approve-non-git',
+        action='store_true',
+        help='Explicitly approve local indexing for this coding folder without Git.',
+    )
     context = commands.add_parser(
         'context', help='Preview redacted project context used in reviews.'
     )

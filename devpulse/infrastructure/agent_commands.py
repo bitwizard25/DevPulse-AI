@@ -3,6 +3,7 @@
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -65,16 +66,24 @@ class AgentCommands:
         process_job = None
         with tempfile.TemporaryFile() as output_file:
             try:
-                process = subprocess.Popen(
-                    argv,
-                    cwd=self.root,
-                    env=env,
-                    shell=False,
-                    stdin=subprocess.DEVNULL,
-                    stdout=output_file,
-                    stderr=subprocess.STDOUT,
-                    **options,
-                )
+                try:
+                    process = subprocess.Popen(
+                        argv,
+                        cwd=self.root,
+                        env=env,
+                        shell=False,
+                        stdin=subprocess.DEVNULL,
+                        stdout=output_file,
+                        stderr=subprocess.STDOUT,
+                        **options,
+                    )
+                except FileNotFoundError:
+                    return {
+                        'status': 'not_found',
+                        'error': 'Requested command executable was not found; no command ran.',
+                        'python_executable': sys.executable,
+                        'hint': 'Check the project test runner and dependencies before retrying. The active Python interpreter can run stdlib unittest; pytest is a separate dependency. Do not repeat the same missing command.',
+                    }
                 if os.name == 'nt':
                     process_job = WindowsProcessJob(process)
                     # Start suspended, attach the kill-on-close job, then resume the

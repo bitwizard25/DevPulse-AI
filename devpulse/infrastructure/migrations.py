@@ -4,7 +4,7 @@ import sqlite3
 import time
 from contextlib import closing
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def migrate(db, home, previous: int):
@@ -66,6 +66,9 @@ def migrate(db, home, previous: int):
             project TEXT NOT NULL, path TEXT NOT NULL, fingerprint TEXT NOT NULL,
             kind TEXT NOT NULL, PRIMARY KEY(project,path)
         );
+        CREATE TABLE IF NOT EXISTS index_permissions (
+            project TEXT PRIMARY KEY, allowed INTEGER NOT NULL CHECK(allowed IN (0,1))
+        );
         CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
             project UNINDEXED, path, kind UNINDEXED, start UNINDEXED, end UNINDEXED, text
         );
@@ -95,7 +98,7 @@ def migrate(db, home, previous: int):
             status TEXT NOT NULL, result TEXT, PRIMARY KEY(turn_id,call_id),
             FOREIGN KEY(turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
         );
-        PRAGMA user_version=5;
+        PRAGMA user_version=6;
         COMMIT;
     """
     )

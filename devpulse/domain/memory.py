@@ -18,3 +18,4 @@ class IndexReport:
     chunks: int = 0
     skipped: list[str] = field(default_factory=list)
     fingerprint: str = ''
+    status: str = 'indexed'

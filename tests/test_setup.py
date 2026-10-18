@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import patch
 
 from devpulse.domain.hardware import HardwareProfile, ModelSpec
 from devpulse.infrastructure.project import initialize
+from devpulse.interfaces.cli import main
 from devpulse.interfaces.setup import run_setup_wizard
 
 
@@ -54,6 +56,65 @@ class SetupTests(unittest.TestCase):
         initialize(self.root, provider='offline')
         rules = self.root / '.devpulse/RULES.md'
         rules.write_text('Keep our project conventions.')
-        config = self.setup_with_choice('2', '1')
+        with patch('devpulse.interfaces.setup.read_api_key', return_value='existing-fixture-key'):
+            config = self.setup_with_choice('2', '1')
         self.assertEqual(config['providers'][0]['kind'], 'openai-compatible')
         self.assertEqual(rules.read_text(), 'Keep our project conventions.')
+
+    @patch('devpulse.interfaces.setup.installed_model_names', return_value=[])
+    def test_online_setup_prompts_for_hidden_key_and_saves_without_project_storage(self, _):
+        key = 'fixture-google-key-never-print'
+        output = io.StringIO()
+        with (
+            patch('devpulse.interfaces.setup.read_api_key', return_value=''),
+            patch('devpulse.interfaces.setup.getpass.getpass', return_value=key) as prompt,
+            patch('devpulse.interfaces.setup.save_api_key', return_value=True) as save,
+            patch('builtins.input', side_effect=['2', '3']),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(run_setup_wizard(self.root), 0)
+        prompt.assert_called_once()
+        save.assert_called_once_with('GOOGLE_API_KEY', key)
+        self.assertNotIn(key, output.getvalue())
+        self.assertIn('saved', output.getvalue().lower())
+        for path in self.root.rglob('*'):
+            if path.is_file():
+                self.assertNotIn(key.encode(), path.read_bytes())
+
+    @patch('devpulse.interfaces.setup.installed_model_names', return_value=[])
+    def test_cancelled_api_key_entry_does_not_initialize_project(self, _):
+        with (
+            patch('devpulse.interfaces.setup.read_api_key', return_value=''),
+            patch('devpulse.interfaces.setup.getpass.getpass', side_effect=KeyboardInterrupt),
+            patch('devpulse.interfaces.setup.save_api_key') as save,
+            patch('builtins.input', side_effect=['2', '2']),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(run_setup_wizard(self.root), 130)
+        save.assert_not_called()
+        self.assertFalse((self.root / '.devpulse/config.json').exists())
+
+    def test_existing_online_project_requests_missing_key_on_interactive_start(self):
+        initialize(self.root, provider='google', api_key_env='DEVPULSE_FIXTURE_API_KEY')
+        key = 'fixture-private-google-key'
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    'DEVPULSE_HOME': str(self.root / 'state'),
+                    'DEVPULSE_FIXTURE_API_KEY': '',
+                },
+            ),
+            patch('devpulse.interfaces.setup.getpass.getpass', return_value=key) as prompt,
+            patch(
+                'devpulse.interfaces.setup.save_api_key',
+                side_effect=lambda name, value: os.environ.__setitem__(name, value) or True,
+            ) as save,
+            patch('sys.stdin.isatty', return_value=True),
+            patch('builtins.input', return_value='/quit'),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(main(['--project', str(self.root)]), 0)
+        prompt.assert_called_once()
+        save.assert_called_once_with('DEVPULSE_FIXTURE_API_KEY', key)
+        self.assertNotIn(key, output.getvalue())

@@ -5,9 +5,12 @@ import re
 import subprocess
 from pathlib import Path
 
+from ..domain.indexing import is_indexable_path
 from ..domain.memory import IndexReport, MemoryChunk
 from ..domain.privacy import Vault
+from .agent_workspace import AgentWorkspace
 from .context import relative_to_root, safe_path
+from .index_access import SQLiteIndexAccess
 from .source import git
 from .state import State
 
@@ -109,6 +112,9 @@ class SQLiteMemoryIndex:
         self.state = state
 
     def rebuild(self, root: Path, vault: Vault) -> IndexReport:
+        decision = SQLiteIndexAccess(self.state).decision(root)
+        if decision.status != 'allowed':
+            return IndexReport(status=decision.status, skipped=[decision.reason])
         project = self.state.identity(str(root.resolve(strict=True)))
         with self.state.connect() as db:
             db.execute('DELETE FROM documents WHERE project=?', (project,))
@@ -116,11 +122,14 @@ class SQLiteMemoryIndex:
         return self.refresh(root, vault)
 
     def refresh(self, root: Path, vault: Vault) -> IndexReport:
+        decision = SQLiteIndexAccess(self.state).decision(root)
+        if decision.status != 'allowed':
+            return IndexReport(status=decision.status, skipped=[decision.reason])
         vault = vault.fork()
         root = root.resolve(strict=True)
         project = self.state.identity(str(root))
         report = IndexReport()
-        candidates = self._candidates(root, report)
+        candidates = self._candidates(root, report, is_git=decision.is_git)
         documents = []
         total = 0
         for path, kind in candidates:
@@ -185,7 +194,9 @@ class SQLiteMemoryIndex:
         report.fingerprint = fingerprint.hexdigest()
         return report
 
-    def _candidates(self, root: Path, report: IndexReport) -> list[tuple[Path, str]]:
+    def _candidates(
+        self, root: Path, report: IndexReport, *, is_git: bool
+    ) -> list[tuple[Path, str]]:
         base = safe_path(root, root / '.devpulse')
         memory = base / 'MEMORY.md'
         candidates = [(memory, 'memory')] if memory.is_file() else []
@@ -195,18 +206,30 @@ class SQLiteMemoryIndex:
             candidates.extend((path, 'memory') for path in skill_files[:20])
             if len(skill_files) > 20:
                 report.skipped.append('Skills after the first 20 paths were omitted.')
-        try:
-            names = sorted(
-                filter(
-                    None,
-                    git(
-                        root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--'
-                    ).split(b'\0'),
+        if is_git:
+            try:
+                names = sorted(
+                    filter(
+                        None,
+                        git(
+                            root,
+                            'ls-files',
+                            '--cached',
+                            '--others',
+                            '--exclude-standard',
+                            '-z',
+                            '--',
+                        ).split(b'\0'),
+                    )
                 )
-            )
-        except (ValueError, OSError, subprocess.SubprocessError):
-            report.skipped.append('Code retrieval unavailable: no readable Git file list.')
-            return candidates
+            except (ValueError, OSError, subprocess.SubprocessError):
+                report.skipped.append('Code retrieval unavailable: no readable Git file list.')
+                return candidates
+        else:
+            names = [
+                relative.as_posix().encode('utf-8') for relative, _ in AgentWorkspace(root).files()
+            ]
+        workspace = AgentWorkspace(root)
         for raw in names[:5000]:
             name = raw.decode('utf-8', errors='replace')
             path = Path(name)
@@ -214,13 +237,17 @@ class SQLiteMemoryIndex:
             filename = path.name.lower()
             if (
                 lower_parts & EXCLUDED_DIRS
+                or not is_indexable_path(name)
                 or filename.startswith('.env')
                 or filename in ('credentials', 'secrets.json', 'package-lock.json')
                 or path.suffix.lower() in EXCLUDED_SUFFIXES
             ):
                 report.skipped.append(f'{name}: excluded from code retrieval.')
                 continue
-            candidates.append((root / path, 'code'))
+            try:
+                candidates.append((workspace.path(name), 'code'))
+            except (OSError, ValueError):
+                report.skipped.append(f'{name}: excluded from code retrieval.')
         if len(names) > 5000:
             report.skipped.append(
                 f'{len(names) - 5000} tracked or untracked paths omitted by the 5000-file limit.'

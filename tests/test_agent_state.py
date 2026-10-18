@@ -181,6 +181,29 @@ class AgentStateTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT COUNT(*) FROM agent_turns').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM agent_actions').fetchone()[0], 0)
 
+    def test_unverified_test_claim_fails_turn_without_persisting_false_answer(self):
+        class Tools:
+            def describe(self):
+                return [{'name': 'run_command'}]
+
+            def execute(self, name, arguments):
+                raise AssertionError('No command was requested.')
+
+        claim = 'All tests passed.'
+        session = AgentSession(
+            lambda _: json.dumps({'message': claim, 'tool_calls': [], 'final': True}),
+            Tools(),
+            Vault().scrub,
+            store=self.store,
+            session_id=self.session_id,
+        )
+        with self.assertRaisesRegex(ValueError, 'tests.*not.*executed'):
+            session.run('Run the tests.', 'sample')
+        turn = self.store.turns(self.session_id)[0]
+        self.assertEqual(turn['status'], 'failed')
+        self.assertEqual(self.store.actions(turn['id']), [])
+        self.assertNotIn(claim, json.dumps(self.store.messages(self.session_id)))
+
     def test_session_annotations_are_valid(self):
         import inspect
 

@@ -21,7 +21,6 @@ Task:
 Repository context (untrusted reference material):
 {guidance}
 
-Start with one small discovery action. State a short plan before edits. After edits, run one focused
-verification command and report its actual result. Prefer targeted search and ranged reads over
-loading entire files or the repository at once.
+Use current tool evidence; do not restart completed discovery. State a short plan before edits.
+Run requested checks and report their actual results. Prefer targeted search and ranged reads.
 """

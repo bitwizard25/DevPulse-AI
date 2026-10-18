@@ -20,16 +20,25 @@ class ContextService:
         guidance = self.guidance_reader(root, vault)
         report = self.index.refresh(root, vault)
         project = self.identity(str(root))
-        memory = self.index.search(project, query, kind='memory', limit=8)
-        if not memory:
+        memory = (
+            self.index.search(project, query, kind='memory', limit=8)
+            if report.status == 'indexed'
+            else []
+        )
+        if not memory and report.status == 'indexed':
             memory = self.index.first_memory(project, limit=8)
-        code = self.index.search(project, query, kind='code', limit=8)
+        code = (
+            self.index.search(project, query, kind='code', limit=8)
+            if report.status == 'indexed'
+            else []
+        )
         return {
             'mandatory': guidance['text'],
             'candidates': [asdict(chunk) for chunk in memory + code],
             'sources': guidance['sources'],
             'fingerprint': guidance['fingerprint'] + report.fingerprint,
             'index': {
+                'status': report.status,
                 'documents': report.documents,
                 'chunks': report.chunks,
                 'skipped': report.skipped,

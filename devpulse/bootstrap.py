@@ -1,6 +1,8 @@
 """Composition root: concrete dependencies are wired only at the process boundary."""
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
 from .application.agent import AgentModelRouter, AgentSession
 from .application.context import ContextPlanner, ContextService
@@ -50,15 +52,22 @@ class AgentRuntime:
     model: AgentModelRouter
     sessions: SQLiteAgentSessions
     context: ContextService
+    review_project: Callable[[Path], dict]
 
 
 def make_agent_runtime(state: State, config) -> AgentRuntime:
+    clock = SystemClock()
+    circuits = SQLiteCircuits(state)
+    engine = make_engine(state, circuits=circuits, clock=clock)
+
+    def review_project(root):
+        return engine.review(root, config, file='all')
+
     return AgentRuntime(
-        model=AgentModelRouter(
-            config.providers, complete_agent, circuits=SQLiteCircuits(state), clock=SystemClock()
-        ),
+        model=AgentModelRouter(config.providers, complete_agent, circuits=circuits, clock=clock),
         sessions=SQLiteAgentSessions(state),
         context=ContextService(SQLiteMemoryIndex(state), read_agent_guidance, state.identity),
+        review_project=review_project,
     )
 
 
@@ -69,7 +78,7 @@ def make_agent_session(runtime, config, root, session_id, approve, on_event, vau
     )
     return AgentSession(
         runtime.model,
-        ProjectTools(root, approve, vault),
+        ProjectTools(root, approve, vault, reviewer=lambda: runtime.review_project(root)),
         vault.scrub,
         on_event=on_event,
         store=runtime.sessions,

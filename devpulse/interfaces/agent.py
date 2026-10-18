@@ -5,8 +5,10 @@ import sys
 from pathlib import Path
 
 from ..bootstrap import make_agent_runtime, make_agent_session
+from ..domain.agent_intent import is_read_only_project_review
 from ..domain.errors import ProviderError
 from ..infrastructure.config import load_config, protected_vault, state_home
+from ..infrastructure.credentials import read_api_key
 from ..infrastructure.files import ProcessLock
 from ..infrastructure.state import State
 from .output import terminal_safe
@@ -17,6 +19,9 @@ def run(args, root: Path) -> int:
     if interactive and not sys.stdin.isatty():
         raise ValueError('Task mode needs a TTY. Use devpulse run "your task" for automation.')
     state = State(state_home())
+    from .indexing import ensure_index_access
+
+    ensure_index_access(root, state, interactive=interactive)
     project_id = state.identity(str(root))
     config = load_config(root)
     if not config.providers:
@@ -34,6 +39,12 @@ def run(args, root: Path) -> int:
                 'Offline setup complete. Run `devpulse init --provider ollama` or `--provider openai-compatible` to enable task sessions.'
             )
             return 0
+    primary = config.providers[0]
+    if interactive and primary.kind != 'ollama' and not read_api_key(primary.api_key_env):
+        from .setup import ensure_api_key
+
+        if not ensure_api_key(primary.api_key_env, primary.name):
+            return 130
     runtime = make_agent_runtime(state, config)
     vault = protected_vault(config)
 
@@ -62,6 +73,8 @@ def run(args, root: Path) -> int:
         output = sys.stdout if interactive else sys.stderr
         if event['type'] == 'message' and event['text'] and interactive:
             print('\n' + terminal_safe(event['text']))
+        elif event['type'] == 'plan' and event['text']:
+            print('\n' + terminal_safe(vault.scrub(event['text'][:1200])), file=output)
         elif event['type'] == 'tool_start':
             details = event['arguments']
             target = details.get('path', details.get('query', details.get('argv', '')))
@@ -72,17 +85,21 @@ def run(args, root: Path) -> int:
         elif event['type'] == 'tool_end':
             try:
                 result = json.loads(event['result'])
-                if result.get('status') == 'denied':
+                if 'error' in result:
+                    print('  ' + terminal_safe(result['error']), file=output)
+                elif result.get('status') == 'denied':
                     print('  denied by user', file=output)
                 elif result.get('provenance') == 'reused prior read':
                     print('  reused previous file read', file=output)
                 elif result.get('status') == 'written':
                     print(f'  wrote {result.get("path")}', file=output)
-                elif result.get('status') == 'completed':
+                elif result.get('status') == 'completed' and 'exit_code' in result:
                     print(
                         f'  exit {result.get("exit_code")}\n{terminal_safe(result.get("output", ""))}',
                         file=output,
                     )
+                elif result.get('status') == 'completed' and 'findings' in result:
+                    print(f'  review: {len(result["findings"])} finding(s)', file=output)
                 elif result.get('status') in ('clean', 'findings'):
                     print(f'  verification: {result.get("status")}', file=output)
                 else:
@@ -91,6 +108,10 @@ def run(args, root: Path) -> int:
                 print('  completed', file=output)
         elif event['type'] == 'context' and event['omitted_messages']:
             print('  Context compacted; current task and instructions kept.', file=output)
+        elif event['type'] == 'completion_blocked':
+            print(
+                '  Tests have not run yet; continuing to collect execution evidence.', file=output
+            )
 
     def create_session(title='Terminal session'):
         metadata = runtime.sessions.create(project_id, title)
@@ -117,14 +138,24 @@ def run(args, root: Path) -> int:
 
     def execute_task(task):
         with session_lock():
+            if interactive:
+                from ..infrastructure.index_access import SQLiteIndexAccess
+                from .indexing import ensure_index_access
+
+                if SQLiteIndexAccess(state).decision(root).status == 'needs_approval':
+                    ensure_index_access(root, state, interactive=True)
             runtime.sessions.recover(session_id)
             if runtime.sessions.get(session_id)['title'] == 'Terminal session':
                 runtime.sessions.set_title(session_id, vault.scrub(task).strip()[:160])
             session = make_agent_session(
                 runtime, config, root, session_id, approve, on_event, vault
             )
-            context = runtime.context(
-                root, vault, budget=config.context_bytes, query=vault.scrub(task)
+            context = (
+                {'mandatory': '', 'candidates': []}
+                if is_read_only_project_review(task)
+                else runtime.context(
+                    root, vault, budget=config.context_bytes, query=vault.scrub(task)
+                )
             )
             return session.run(
                 task, root.name, context['mandatory'], references=context['candidates']

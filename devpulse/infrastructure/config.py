@@ -7,6 +7,7 @@ from pathlib import Path
 from ..domain.models import Config, ProviderConfig
 from ..domain.privacy import Vault
 from .context import safe_path
+from .credentials import read_api_key
 
 
 def load_config(root: Path) -> Config:
@@ -48,7 +49,7 @@ def state_home() -> Path:
 
 
 def credential_values(config: Config) -> list[str]:
-    return [os.environ.get(provider.api_key_env, '') for provider in config.providers]
+    return [read_api_key(provider.api_key_env) for provider in config.providers]
 
 
 def protected_vault(config: Config) -> Vault:

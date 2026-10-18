@@ -14,7 +14,7 @@ DevPulse adopts these ideas at a smaller coding-agent scale:
 
 - Durable SQLite sessions and turn records, scoped to a project identity; the foreground terminal owns interactive model/tool execution and approvals while the existing gateway owns review jobs and provider circuits.
 - A compact workspace bootstrap assembled from `AGENTS.md`, `CLAUDE.md`, `.devpulse/RULES.md`, and relevant memory, with clear precedence and bounded context.
-- A task loop that chooses from a small typed tool catalog: inspect files, search, read, propose/apply an in-project patch, run a bounded verification command, and invoke DevPulse review. Small-model reliability is improved with concise prompts, one tool call per model response, and newest-result-preserving context compaction.
+- A task loop that chooses from a small typed tool catalog: inspect files, search, read, propose/apply an in-project patch, run a bounded verification command, and invoke DevPulse's read-only whole-project review engine. A review/audit task should use that direct review path rather than manually reading files one by one. Small-model reliability is improved with concise prompts, one tool call per model response, and newest-result-preserving context compaction.
 - Skills as on-demand task procedures with YAML frontmatter; only matching skills enter the prompt.
 - Visible progress, tool calls, diffs, and verification results in the terminal.
 

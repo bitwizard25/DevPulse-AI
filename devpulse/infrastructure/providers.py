@@ -1,15 +1,16 @@
 """Small HTTP adapters with bounded responses and no credential-bearing redirects."""
 
 import json
-import os
 import socket
 from urllib import error, request
 from urllib.parse import quote, urlsplit
 
+from ..domain.agent_schema import decision_schema
 from ..domain.errors import ProviderError
 from ..domain.models import ProviderConfig
 from ..domain.prompts import SYSTEM
 from ..domain.review import validate_result
+from .credentials import read_api_key
 
 MAX_RESPONSE = 1024 * 1024
 
@@ -130,7 +131,7 @@ def complete_agent(config: ProviderConfig, messages: list[dict]) -> str:
                 'model': config.model,
                 'messages': messages,
                 'stream': False,
-                'format': 'json',
+                'format': decision_schema(),
                 'options': {
                     'temperature': 0,
                     'num_predict': config.output_tokens,
@@ -153,10 +154,10 @@ def complete_agent(config: ProviderConfig, messages: list[dict]) -> str:
 
 
 def _complete_cloud(config: ProviderConfig, messages: list[dict]) -> str | None:
-    key = os.environ.get(config.api_key_env)
+    key = read_api_key(config.api_key_env)
     if not key:
         raise ProviderError(
-            f'Set the environment variable {config.api_key_env} for this provider.'
+            f'No API key found for {config.api_key_env}. Run devpulse setup to enter it.'
         )
     base = config.base_url.rstrip('/')
     if config.kind == 'anthropic':

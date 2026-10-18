@@ -22,6 +22,7 @@ class JobInterfaceTests(unittest.TestCase):
         self.home = self.root / 'state'
         self.project = self.root / 'project'
         self.project.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.project)], check=True)
         (self.project / '.devpulse').mkdir()
         (self.project / '.devpulse/config.json').write_text(
             json.dumps(Config(providers=[ProviderConfig()]).as_dict())

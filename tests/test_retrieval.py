@@ -17,6 +17,8 @@ class RetrievalTests(unittest.TestCase):
         self.index = SQLiteMemoryIndex(self.state)
         self.project = self.root / 'project'
         self.project.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.project)], check=True)
+        (self.project / 'README.md').write_text('# Coding project\n')
         (self.project / '.devpulse').mkdir()
 
     def test_memory_refresh_handles_edits_deletion_and_project_isolation(self):

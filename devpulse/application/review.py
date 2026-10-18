@@ -87,6 +87,18 @@ class Engine:
             vault.count, len(set(re.findall(r'__SECRET_(?:INDEX_)?\d+__', planned['prompt'])))
         )
         findings = check_python(source['files'])
+        omitted_from_prompt = source.get('files_omitted_from_prompt', 0)
+        if omitted_from_prompt:
+            findings.append(
+                finding(
+                    'project-review-coverage',
+                    'warning',
+                    '',
+                    1,
+                    f'{omitted_from_prompt} project file(s) were excluded from the AI prompt by review size limits; '
+                    'the project review is partial.',
+                )
+            )
         if redacted_count:
             findings.append(
                 finding(
@@ -120,7 +132,12 @@ class Engine:
             findings=vault.scrub_value(findings),
             context=vault.scrub_value(planned['context']),
             source=vault.scrub_value(
-                {'kind': source['kind'], 'python_files_checked': len(source['files'])}
+                {
+                    'kind': source['kind'],
+                    'python_files_checked': len(source['files']),
+                    'files_in_prompt': source.get('files_in_prompt', len(source['files'])),
+                    'files_omitted_from_prompt': omitted_from_prompt,
+                }
             ),
             redacted_values=redacted_count,
             mode=mode,

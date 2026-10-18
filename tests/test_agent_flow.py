@@ -10,7 +10,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+from devpulse.application.agent import AgentSession
+from devpulse.domain.privacy import Vault
 from devpulse.infrastructure.agent_sessions import SQLiteAgentSessions
+from devpulse.infrastructure.agent_tools import ProjectTools
 from devpulse.infrastructure.state import State
 from devpulse.interfaces.cli import main
 
@@ -72,6 +75,49 @@ def latest_result(messages):
 
 
 class AgentFlowTests(unittest.TestCase):
+    def test_natural_language_project_review_runs_directly_without_agent_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.devpulse').mkdir()
+            reviews = []
+            findings = [
+                {
+                    'rule_id': 'unsafe-query',
+                    'severity': 'error',
+                    'path': 'billing.py',
+                    'line': 14,
+                    'message': 'User input is concatenated into SQL.',
+                }
+            ]
+
+            def reviewer():
+                reviews.append(root)
+                return {
+                    'summary': 'One unsafe query found.',
+                    'findings': findings,
+                    'provider': 'fixture',
+                    'model': 'fixture-model',
+                    'mode': 'ai',
+                }
+
+            def model(messages):
+                self.fail('Explicit project review should use the deterministic review route.')
+
+            tools = ProjectTools(
+                root, lambda *_: self.fail('Review must not request approval.'), Vault(), reviewer
+            )
+            session = AgentSession(model, tools, Vault().scrub, context_budget_bytes=1000)
+            answer = session.run(
+                'Review the entire repository for security issues.',
+                'fixture',
+                'irrelevant ' * 3000,
+                references=[{'text': 'irrelevant ' * 3000}],
+            )
+
+            self.assertIn('billing.py:14', answer)
+            self.assertIn('[ERROR]', answer)
+            self.assertEqual(reviews, [root])
+
     def test_final_answer_with_redundant_tool_request_finishes_without_running_it(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'project'
@@ -141,9 +187,7 @@ class AgentFlowTests(unittest.TestCase):
             actions = sessions.actions(turn['id'])
             self.assertEqual([action['name'] for action in actions], ['read_file', 'read_file'])
             self.assertNotIn('provenance', json.loads(actions[0]['result']))
-            self.assertEqual(
-                json.loads(actions[1]['result'])['provenance'], 'reused prior read'
-            )
+            self.assertEqual(json.loads(actions[1]['result'])['provenance'], 'reused prior read')
 
     def test_same_coding_task_works_with_ollama_and_api_and_resumes(self):
         for kind in ('ollama', 'openai-compatible'):
